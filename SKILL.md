@@ -109,3 +109,7 @@ Summarize high-impact remediation themes in a few lines.
 
 4. Suggested Verification
 List focused tests/checks to confirm each major fix.
+
+## Runtime Heuristics
+
+When the target stack is Bun + SQLite, apply the runtime-specific checklist in `references/audit-framework.md` (`Runtime-Specific Heuristics (Bun + SQLite)`) before finalizing findings.

@@ -111,3 +111,11 @@ Use this exact section order:
 3. Remediation Plan (Now / Next / Later)
 4. Verification Plan
 5. Executive Summary
+
+## Runtime-Specific Heuristics (Bun + SQLite)
+
+Apply these checks whenever stack includes Bun server routes and SQLite:
+- JSON parsing downgrade check: flag endpoints that do `await request.json()` and on `catch` silently set `payload = {}`. Invalid JSON should return `400`; only truly empty bodies should default.
+- Content-Type normalization check: media-type policy comparisons should normalize header casing (`toLowerCase()`), especially for multipart gating.
+- Broad-catch downgrade check: in reconciliation/import loops, flag `catch { skipped++ }` patterns that convert unknown failures into success-like responses. Only known recoverable codes should be downgraded.
+- SQLite trigger accounting check: when using `run().changes` for conflict detection, remember AFTER UPDATE triggers can increase reported changes; treat `< 1` as no-op/conflict, not `!== 1`.
