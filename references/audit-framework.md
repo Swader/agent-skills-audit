@@ -26,6 +26,23 @@ Use this structure for every finding:
 - Verification: Targeted test/check to validate the fix.
 - Dependencies: Cross-team or sequencing constraints, if any.
 
+## Invariant Coverage Matrix (Required)
+
+Build this before role pass 1, then reuse it in pass 2.
+
+For each invariant, list all mutating entry points (routes, webhooks, workers, scripts) and verify parity:
+- Invariant: what must always remain true.
+- Entry Points: every code path that can violate it.
+- Guard Type: transactionality, conflict checks, auth checks, validation, media-type policy.
+- Gap: missing or inconsistent enforcement.
+
+Minimum invariants to include in every audit:
+- Multi-table link invariants (must be atomic and conflict-safe).
+- Identity disable/revoke invariants (deactivation must invalidate active credentials).
+- Input transport invariants (content-type parsing + body-size policies cannot be bypassed by alternate media types).
+- Query filter invariants (date/number filters validated and canonicalized).
+- Graph/tree invariants (cycle prevention for parent/child relationships).
+
 ## Role Checklists
 
 ### Security Expert
@@ -36,6 +53,8 @@ Check for:
 - Secrets handling, key management, token lifetime/revocation, and session fixation.
 - Idempotency/replay gaps, webhook signing/verification errors, race-prone state transitions.
 - DDoS abuse surfaces: unbounded endpoints, expensive queries, amplification paths, missing rate limits.
+- Deactivation semantics: disabling users/admins must revoke active sessions/tokens/keys and auth middleware must re-check active status.
+- Parser/policy bypasses: endpoints should not allow oversized or unexpected payload classes through content-type exceptions.
 
 ### Performance Expert
 
@@ -63,6 +82,7 @@ Check for:
 - Test strategy gaps: missing integration/contract/load tests for critical paths.
 - Onboarding quality: concise docs, runbooks, architecture notes, and executable examples.
 - LLM/operator friendliness: discoverable conventions and deterministic workflows.
+- Cross-route consistency: equivalent capabilities must enforce equivalent validation/invariants.
 
 ### Edge Case Master
 
@@ -72,13 +92,14 @@ Check for:
 - Cross-system races (jobs, webhooks, external providers, same-host side effects).
 - Non-obvious abuse chains combining medium findings into critical outcomes.
 - Spec-vs-implementation mismatches hidden in user stories rather than obvious code smells.
+- Structural anomalies: self-links and indirect cycles in hierarchical data.
 
 ## Two-Pass Execution Rule
 
 1. Complete pass 1 for Security, Performance, UX, DX, then Edge.
 2. Run tie-breaker review to reconcile conflicts.
 3. Re-run Security/Performance/UX/DX using edge findings as new attack/load/flow assumptions.
-4. Finish with Edge final pass to validate residual risk after proposed fixes.
+4. Finish with Edge final pass to validate residual risk after proposed mitigations.
 5. Produce one merged final report from the tie-breaker lead.
 
 ## Final Report Template

@@ -41,7 +41,15 @@ Follow this sequence every time:
 1. Build Context
 Read code + product flows. Identify assets, entry points, high-risk operations, privileged actions, external dependencies, and "failure hurts" journeys.
 
-2. Pass 1 Specialist Reviews
+2. Build Invariant Coverage Matrix
+Before specialist pass 1, map critical invariants to every mutating path (HTTP routes, webhooks, async jobs, scripts):
+- Data-link invariants: multi-table relationships that must remain consistent.
+- Auth lifecycle invariants: disable/revoke semantics for sessions/tokens/API keys.
+- Input/transport invariants: validation, content-type policy, body-size/parse behavior.
+- Shape invariants: trees/graphs must reject cycles where applicable.
+Treat missing parity across equivalent paths as a finding candidate.
+
+3. Pass 1 Specialist Reviews
 Run role-specific analysis in this order:
 - Security
 - Performance
@@ -50,18 +58,18 @@ Run role-specific analysis in this order:
 - Edge case master
 Capture findings using the schema in `references/audit-framework.md`.
 
-3. Tie-Breaker Reconciliation
+4. Tie-Breaker Reconciliation
 Resolve disagreements:
 - Decide whether contested items are true issues.
 - Set severity and confidence.
 - Remove duplicates and merge overlapping findings.
 
-4. Cross-Review Pass 2
+5. Cross-Review Pass 2
 After edge-case findings, rerun specialists:
 - Security/Performance/UX/DX reassess prior findings and new edge-triggered scenarios.
 - Edge case master performs a final pass on residual risk after proposed mitigations.
 
-5. Final Report
+6. Final Report
 Publish one document from the tie-breaker lead with:
 - Findings first (ordered by severity, then blast radius, then exploitability).
 - Open questions/assumptions.
@@ -76,6 +84,8 @@ Enforce these requirements:
 - Prefer actionable fixes over abstract advice.
 - Separate confirmed defects from speculative risks.
 - Mark confidence for each finding.
+- Run a cross-route consistency sweep: equivalent endpoints/jobs must enforce equivalent invariants.
+- For each High/Critical finding, include at least one focused regression test/check.
 
 ## Safety and Policy Guardrails
 
