@@ -42,6 +42,7 @@ Minimum invariants to include in every audit:
 - Input transport invariants (content-type parsing + body-size policies cannot be bypassed by alternate media types).
 - Query filter invariants (date/number filters validated and canonicalized).
 - Graph/tree invariants (cycle prevention for parent/child relationships).
+- In-memory state-boundedness invariants (rate-limit/cache maps keyed by request data require TTL eviction and max-cardinality controls).
 
 ## Role Checklists
 
@@ -55,6 +56,7 @@ Check for:
 - DDoS abuse surfaces: unbounded endpoints, expensive queries, amplification paths, missing rate limits.
 - Deactivation semantics: disabling users/admins must revoke active sessions/tokens/keys and auth middleware must re-check active status.
 - Parser/policy bypasses: endpoints should not allow oversized or unexpected payload classes through content-type exceptions.
+- In-memory abuse controls: request-keyed maps (for example login attempts by IP) must have stale-key eviction and hard caps to prevent memory growth under scans.
 
 ### Performance Expert
 
@@ -72,6 +74,8 @@ Check for:
 - Error/empty/loading states and perceived performance.
 - Accessibility basics: keyboard flow, labels, focus handling, contrast, ARIA correctness.
 - Human and bot operator flows where relevant (APIs, machine-consumable outputs, predictable contracts).
+- API error actionability for bots: verify error `details` includes actionable next-step context when policy blocks input classes (for example allowed routes and received content type on multipart rejection).
+- Minimal internal auth UX story: ensure there is a login path, core navigation to operational pages, and clear session-expired re-auth guidance.
 - Trust risks from coercive or manipulative patterns; flag compliance/reputation exposure.
 
 ### DX Expert
@@ -119,3 +123,4 @@ Apply these checks whenever stack includes Bun server routes and SQLite:
 - Content-Type normalization check: media-type policy comparisons should normalize header casing (`toLowerCase()`), especially for multipart gating.
 - Broad-catch downgrade check: in reconciliation/import loops, flag `catch { skipped++ }` patterns that convert unknown failures into success-like responses. Only known recoverable codes should be downgraded.
 - SQLite trigger accounting check: when using `run().changes` for conflict detection, remember AFTER UPDATE triggers can increase reported changes; treat `< 1` as no-op/conflict, not `!== 1`.
+- In-memory map growth check: for Maps/objects keyed by request-derived values (IP, token, path), require TTL cleanup and/or max-key caps, plus a regression test that simulates many unique keys.
