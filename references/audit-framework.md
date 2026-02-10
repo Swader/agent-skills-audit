@@ -37,12 +37,18 @@ For each invariant, list all mutating entry points (routes, webhooks, workers, s
 - Gap: missing or inconsistent enforcement.
 
 Minimum invariants to include in every audit:
-- Multi-table link invariants (must be atomic and conflict-safe).
-- Identity disable/revoke invariants (deactivation must invalidate active credentials).
-- Input transport invariants (content-type parsing + body-size policies cannot be bypassed by alternate media types).
-- Query filter invariants (date/number filters validated and canonicalized).
-- Graph/tree invariants (cycle prevention for parent/child relationships).
-- In-memory state-boundedness invariants (rate-limit/cache maps keyed by request data require TTL eviction and max-cardinality controls).
+- Data integrity invariants (linked writes remain atomic/consistent across stores and async boundaries).
+- Access-control and scope isolation invariants (authz checks and tenant/workspace/account boundaries are enforced on every read/write path).
+- Identity lifecycle invariants (disable/revoke/role changes take effect across active sessions/tokens/keys).
+- Input/protocol invariants (validation, canonicalization, parser behavior, and payload/media-type limits are consistent across equivalent entry points).
+- Uniqueness/conflict invariants (business uniqueness and conflict rules are datastore-enforced, not only app pre-checks).
+- Lifecycle/state-machine invariants (active/archived/deleted/expired transitions are explicit and enforced consistently in read + write + destructive paths).
+- Idempotency/order invariants (retries, duplicate events, and out-of-order delivery cannot produce duplicate side effects or invalid state).
+- Time semantics invariants (timezone/DST/window boundaries and expiry logic are deterministic).
+- Resource-boundedness invariants (pagination, fan-out, in-memory maps, queue growth, and retries have bounds/backpressure).
+- External dependency degradation invariants (timeouts, retries, fallback, and partial-failure behavior are explicit and testable).
+- Observability/auditability invariants (high-risk mutations and failures are traceable with actionable context).
+- Contract evolution invariants (deprecations and replacements fail explicitly and remain docs/config/spec parity-safe).
 
 ## Role Checklists
 
@@ -57,6 +63,8 @@ Check for:
 - Deactivation semantics: disabling users/admins must revoke active sessions/tokens/keys and auth middleware must re-check active status.
 - Parser/policy bypasses: endpoints should not allow oversized or unexpected payload classes through content-type exceptions.
 - In-memory abuse controls: request-keyed maps (for example login attempts by IP) must have stale-key eviction and hard caps to prevent memory growth under scans.
+- Canonicalization and parser split-brain risks (Unicode normalization, case-folding, path normalization, mixed parser behavior across interfaces).
+- High-risk operation safeguards (step-up auth/explicit confirmation/anti-automation controls where irreversible actions exist).
 
 ### Performance Expert
 
@@ -66,6 +74,9 @@ Check for:
 - Inefficient build/runtime workflows: tasks that should move to async queues, batch jobs, or cron.
 - Frontend payload bloat, hydration/render hotspots, and cache invalidation failures.
 - Throughput/latency tail behavior under contention and degraded dependency modes.
+- Fan-out dependency resilience: aggregation endpoints calling multiple upstream entities should use bounded concurrency and per-entity error handling so one failure does not blank the full response.
+- Retry-storm and backpressure behavior under provider latency/failure, including queue saturation risk.
+- Pagination/sort stability and large-cardinality behavior (no unbounded response assembly paths).
 
 ### UX Expert
 
@@ -76,7 +87,9 @@ Check for:
 - Human and bot operator flows where relevant (APIs, machine-consumable outputs, predictable contracts).
 - API error actionability for bots: verify error `details` includes actionable next-step context when policy blocks input classes (for example allowed routes and received content type on multipart rejection).
 - Minimal internal auth UX story: ensure there is a login path, core navigation to operational pages, and clear session-expired re-auth guidance.
+- Global context-switch behavior: whichever context selector exists (mode/tenant/workspace/environment) should refresh visible data in-place and clear now-invalid local filters/groupings.
 - Trust risks from coercive or manipulative patterns; flag compliance/reputation exposure.
+- Destructive-action ergonomics: explicit confirmation, recoverability/undo expectations, and clear blast-radius communication.
 
 ### DX Expert
 
@@ -87,6 +100,10 @@ Check for:
 - Onboarding quality: concise docs, runbooks, architecture notes, and executable examples.
 - LLM/operator friendliness: discoverable conventions and deterministic workflows.
 - Cross-route consistency: equivalent capabilities must enforce equivalent validation/invariants.
+- Deprecation contract parity: deprecated endpoints should return explicit, machine-readable replacement details and consistent status semantics.
+- Bot-instruction parity: API docs and agent/skill guidance must match live endpoint behavior (including batch orchestration limits and lifecycle semantics).
+- Remediation traceability: findings should map to an implementation checklist/spec with closure status so handoffs can continue without re-auditing from scratch.
+- Change safety rails: feature flags/migrations/config toggles should include rollback and compatibility strategy.
 
 ### Edge Case Master
 
@@ -97,6 +114,13 @@ Check for:
 - Non-obvious abuse chains combining medium findings into critical outcomes.
 - Spec-vs-implementation mismatches hidden in user stories rather than obvious code smells.
 - Structural anomalies: self-links and indirect cycles in hierarchical data.
+- Context-shift races: switching global context while a page/process is active must not leave stale data, invalid query shapes, or half-updated summaries.
+- Matcher disambiguation edges: explicit mappings should beat heuristics, and near-matches should avoid partial-token false positives.
+- Partial-update edge cases: validate resulting state (`existing + patch`) so cross-field invariants cannot be bypassed.
+- Null/empty/zero/missing ambiguity: ensure business logic does not conflate sentinel states.
+- Cursor/page drift: ensure stable ordering and deterministic pagination under concurrent writes.
+- Numeric precision and serialization edges: float/decimal/BigInt conversions must not silently corrupt values.
+- Boundary payload behavior: deep nesting, large arrays/files, and malformed encodings should fail safely.
 
 ## Two-Pass Execution Rule
 
@@ -116,9 +140,22 @@ Use this exact section order:
 4. Verification Plan
 5. Executive Summary
 
-## Runtime-Specific Heuristics (Bun + SQLite)
+## Runtime-Agnostic Edge Sweep
 
-Apply these checks whenever stack includes Bun server routes and SQLite:
+Run this sweep for every audit, regardless of stack:
+- Partial update vs full replace semantics: verify cross-field invariants on resulting state, not just provided keys.
+- Null/empty/zero/missing differentiation: verify defaults and validations do not collapse distinct states.
+- Stable ordering and pagination: verify deterministic sort keys, cursor shape validation, and no duplicate/skip drift under writes.
+- Canonicalization and encoding: verify Unicode/case/path normalization and parser parity across interfaces.
+- Numeric and temporal boundaries: verify precision/overflow/rounding handling and timezone/DST/expiry boundary behavior.
+- Retry/idempotency behavior: verify dedupe keys, idempotency key claiming order, and safe replay semantics.
+- Cache/permission freshness: verify permission and lifecycle changes invalidate stale cache/session views.
+- Resource ceilings: verify caps/backpressure/TTL for queues, maps, fan-out loops, and payload parsing paths.
+- Startup/recovery resilience: verify transient dependency failures do not permanently poison initialization state.
+
+## Runtime Module: Bun + SQLite
+
+Apply these checks only when stack includes Bun server routes and SQLite:
 - JSON parsing downgrade check: flag endpoints that do `await request.json()` and on `catch` silently set `payload = {}`. Invalid JSON should return `400`; only truly empty bodies should default.
 - Content-Type normalization check: media-type policy comparisons should normalize header casing (`toLowerCase()`), especially for multipart gating.
 - Broad-catch downgrade check: in reconciliation/import loops, flag `catch { skipped++ }` patterns that convert unknown failures into success-like responses. Only known recoverable codes should be downgraded.

@@ -1,4 +1,4 @@
 interface:
   display_name: "Code Audit Panel"
-  short_description: "Two-pass code audits across security, perf, UX, DX, and edge."
-  default_prompt: "Audit this codebase with Security, Performance, UX, DX, and Edge experts in two passes, then deliver one prioritized report as tie-breaker lead."
+  short_description: "Two-pass, stack-agnostic audits with runtime overlays."
+  default_prompt: "Audit this codebase with Security, Performance, UX, DX, and Edge experts in two passes. Start stack-agnostic, add relevant runtime-specific overlays, then deliver one prioritized report as tie-breaker lead."

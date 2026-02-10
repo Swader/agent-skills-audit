@@ -1,6 +1,6 @@
 ---
 name: audit-code
-description: Run a two-pass, multidisciplinary code audit led by a tie-breaker lead, combining security, performance, UX, DX, and edge-case analysis into one prioritized report with concrete fixes. Use when the user asks to audit code, perform a deep review, stress-test a codebase, or produce a risk-ranked remediation plan across backend, frontend, APIs, infra scripts, and product flows.
+description: Run a two-pass, multidisciplinary code audit led by a tie-breaker lead, combining security, performance, UX, DX, and edge-case analysis into one prioritized report with concrete fixes. Use when the user asks to audit code, perform a deep review, stress-test a codebase, or produce a risk-ranked remediation plan across backend, frontend, APIs, infra scripts, and product flows. Keep the audit stack-agnostic first, then add runtime-specific checks as an overlay.
 ---
 
 # Audit Code
@@ -43,10 +43,16 @@ Read code + product flows. Identify assets, entry points, high-risk operations, 
 
 2. Build Invariant Coverage Matrix
 Before specialist pass 1, map critical invariants to every mutating path (HTTP routes, webhooks, async jobs, scripts):
-- Data-link invariants: multi-table relationships that must remain consistent.
-- Auth lifecycle invariants: disable/revoke semantics for sessions/tokens/API keys.
-- Input/transport invariants: validation, content-type policy, body-size/parse behavior.
-- Shape invariants: trees/graphs must reject cycles where applicable.
+- Data-integrity invariants: linked records, transaction boundaries, and conflict handling must preserve consistency.
+- Access lifecycle invariants: permission changes (disable/revoke/role change) must take effect across active credentials and privileged actions.
+- Input/protocol invariants: validation, canonicalization, parser behavior, and payload size/media-type policy must be consistent across equivalent paths.
+- State-transition invariants: lifecycle transitions (active/archived/deleted/expired) must be explicit, legal, and consistently enforced.
+- Idempotency/order invariants: retries, duplicates, and out-of-order events must not corrupt state or duplicate side effects.
+- Time-window invariants: timezone and boundary behavior (expiry, rollovers, DST) must be deterministic.
+- Resource-boundedness invariants: loops, fan-out, queues, and in-memory maps must have caps/backpressure/cleanup.
+- External dependency invariants: timeouts, partial failures, fallback behavior, and stale-cache behavior must be intentional.
+- Observability invariants: high-risk state changes and failures must emit actionable, traceable signals.
+Add domain-specific invariants discovered during context build; do not constrain to this list.
 Treat missing parity across equivalent paths as a finding candidate.
 
 3. Pass 1 Specialist Reviews
@@ -85,6 +91,12 @@ Enforce these requirements:
 - Separate confirmed defects from speculative risks.
 - Mark confidence for each finding.
 - Run a cross-route consistency sweep: equivalent endpoints/jobs must enforce equivalent invariants.
+- Run a required runtime-agnostic edge sweep using `references/audit-framework.md` (`Runtime-Agnostic Edge Sweep`).
+- Verify deprecation path integrity: explicit failure semantics, replacement guidance, and docs/spec/skill parity.
+- For fan-out integration endpoints, verify bounded concurrency and partial-failure behavior expectations.
+- Verify state-switch UX integrity for whichever context selector exists in the product (for example workspace/account/tenant/environment): changing it should refresh active views and reset invalid local filters/groupings.
+- Verify partial-update invariants against resulting state (`existing + patch`), not only provided fields.
+- Verify remediation traceability: findings-to-fixes status should remain mapped in a live checklist/spec so handoff can continue without hidden assumptions.
 - For each High/Critical finding, include at least one focused regression test/check.
 
 ## Safety and Policy Guardrails
@@ -112,4 +124,6 @@ List focused tests/checks to confirm each major fix.
 
 ## Runtime Heuristics
 
-When the target stack is Bun + SQLite, apply the runtime-specific checklist in `references/audit-framework.md` (`Runtime-Specific Heuristics (Bun + SQLite)`) before finalizing findings.
+Always apply the runtime-agnostic checklist in `references/audit-framework.md` (`Runtime-Agnostic Edge Sweep`).
+If a stack-specific module exists in that file and matches the target stack, apply it as an additive overlay, not a replacement.
+If no module matches, infer and state the top stack-specific risk assumptions, then continue the audit.
