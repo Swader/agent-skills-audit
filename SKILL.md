@@ -45,12 +45,14 @@ Read code + product flows. Identify assets, entry points, high-risk operations, 
 Before specialist pass 1, map critical invariants to every mutating path (HTTP routes, webhooks, async jobs, scripts):
 - Data-integrity invariants: linked records, transaction boundaries, and conflict handling must preserve consistency.
 - Access lifecycle invariants: permission changes (disable/revoke/role change) must take effect across active credentials and privileged actions.
+- Entitlement invariants: plan/tier/feature gates must be enforced on every trigger path (API/UI/webhook/job), and queued work must re-check entitlement at execution time.
 - Input/protocol invariants: validation, canonicalization, parser behavior, and payload size/media-type policy must be consistent across equivalent paths.
 - State-transition invariants: lifecycle transitions (active/archived/deleted/expired) must be explicit, legal, and consistently enforced.
+- Write-freshness invariants: callback/verification paths must avoid stale full-record rewrites; use conditional field-scoped updates for concurrent edit safety.
 - Idempotency/order invariants: retries, duplicates, and out-of-order events must not corrupt state or duplicate side effects.
 - Time-window invariants: timezone and boundary behavior (expiry, rollovers, DST) must be deterministic.
 - Resource-boundedness invariants: loops, fan-out, queues, and in-memory maps must have caps/backpressure/cleanup.
-- External dependency invariants: timeouts, partial failures, fallback behavior, and stale-cache behavior must be intentional.
+- External dependency invariants: timeouts, partial failures, fallback behavior, stale-cache behavior, and explicit provider policy parameters must be intentional.
 - Observability invariants: high-risk state changes and failures must emit actionable, traceable signals.
 Add domain-specific invariants discovered during context build; do not constrain to this list.
 Treat missing parity across equivalent paths as a finding candidate.
@@ -96,6 +98,9 @@ Enforce these requirements:
 - For fan-out integration endpoints, verify bounded concurrency and partial-failure behavior expectations.
 - Verify state-switch UX integrity for whichever context selector exists in the product (for example workspace/account/tenant/environment): changing it should refresh active views and reset invalid local filters/groupings.
 - Verify partial-update invariants against resulting state (`existing + patch`), not only provided fields.
+- Verify derived-metric parity: UI formulas and summaries include all policy-required components (for example top-ups, adjustments, and resets), not just base plan values.
+- Verify external billing/provider contract explicitness: behavioral requirements (for example proration/cancel timing/status sync) must be set in code/webhook handling, not left to provider defaults.
+- Verify pagination/filter carryover safety: user-supplied query params survive page transitions without raw interpolation/encoding drift.
 - Verify remediation traceability: findings-to-fixes status should remain mapped in a live checklist/spec so handoff can continue without hidden assumptions.
 - For each High/Critical finding, include at least one focused regression test/check.
 

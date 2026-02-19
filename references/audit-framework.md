@@ -39,14 +39,17 @@ For each invariant, list all mutating entry points (routes, webhooks, workers, s
 Minimum invariants to include in every audit:
 - Data integrity invariants (linked writes remain atomic/consistent across stores and async boundaries).
 - Access-control and scope isolation invariants (authz checks and tenant/workspace/account boundaries are enforced on every read/write path).
+- Entitlement and policy invariants (plan/tier/feature flags and expensive-operation rights are enforced across API/UI/webhook/job paths, with revalidation before queued execution).
 - Identity lifecycle invariants (disable/revoke/role changes take effect across active sessions/tokens/keys).
 - Input/protocol invariants (validation, canonicalization, parser behavior, and payload/media-type limits are consistent across equivalent entry points).
 - Uniqueness/conflict invariants (business uniqueness and conflict rules are datastore-enforced, not only app pre-checks).
 - Lifecycle/state-machine invariants (active/archived/deleted/expired transitions are explicit and enforced consistently in read + write + destructive paths).
+- Write-freshness invariants (callback/verification/reconciliation paths avoid stale full-record rewrites; concurrent edits cannot be silently reverted).
 - Idempotency/order invariants (retries, duplicate events, and out-of-order delivery cannot produce duplicate side effects or invalid state).
 - Time semantics invariants (timezone/DST/window boundaries and expiry logic are deterministic).
 - Resource-boundedness invariants (pagination, fan-out, in-memory maps, queue growth, and retries have bounds/backpressure).
 - External dependency degradation invariants (timeouts, retries, fallback, and partial-failure behavior are explicit and testable).
+- External-authority reconciliation invariants (provider state changes map deterministically to local entitlement/status fields, including all required update events).
 - Observability/auditability invariants (high-risk mutations and failures are traceable with actionable context).
 - Contract evolution invariants (deprecations and replacements fail explicitly and remain docs/config/spec parity-safe).
 
@@ -60,6 +63,7 @@ Check for:
 - Secrets handling, key management, token lifetime/revocation, and session fixation.
 - Idempotency/replay gaps, webhook signing/verification errors, race-prone state transitions.
 - DDoS abuse surfaces: unbounded endpoints, expensive queries, amplification paths, missing rate limits.
+- Entitlement bypass surfaces: expensive operations must enforce plan/tier gates on all invocation paths, not only UX entry points.
 - Deactivation semantics: disabling users/admins must revoke active sessions/tokens/keys and auth middleware must re-check active status.
 - Parser/policy bypasses: endpoints should not allow oversized or unexpected payload classes through content-type exceptions.
 - In-memory abuse controls: request-keyed maps (for example login attempts by IP) must have stale-key eviction and hard caps to prevent memory growth under scans.
@@ -74,6 +78,7 @@ Check for:
 - Inefficient build/runtime workflows: tasks that should move to async queues, batch jobs, or cron.
 - Frontend payload bloat, hydration/render hotspots, and cache invalidation failures.
 - Throughput/latency tail behavior under contention and degraded dependency modes.
+- Cost-amplification paths: heavy operations (for example backfills/replays/rebuilds) should require explicit entitlement checks plus bounded execution.
 - Fan-out dependency resilience: aggregation endpoints calling multiple upstream entities should use bounded concurrency and per-entity error handling so one failure does not blank the full response.
 - Retry-storm and backpressure behavior under provider latency/failure, including queue saturation risk.
 - Pagination/sort stability and large-cardinality behavior (no unbounded response assembly paths).
@@ -83,6 +88,7 @@ Check for:
 Check for:
 - User journey friction: unnecessary steps, dead-ends, poor defaults, weak state feedback.
 - Error/empty/loading states and perceived performance.
+- Derived metric correctness: displayed formulas and progress denominators should match policy math (including top-ups/adjustments/reset windows), not simplified approximations.
 - Accessibility basics: keyboard flow, labels, focus handling, contrast, ARIA correctness.
 - Human and bot operator flows where relevant (APIs, machine-consumable outputs, predictable contracts).
 - API error actionability for bots: verify error `details` includes actionable next-step context when policy blocks input classes (for example allowed routes and received content type on multipart rejection).
@@ -95,6 +101,7 @@ Check for:
 
 Check for:
 - API clarity: stable contracts, explicit errors, pagination/filter semantics, and versioning hygiene.
+- Provider-contract completeness: external API defaults that affect user-visible billing/lifecycle behavior should be explicit in request/webhook code and test-covered.
 - Code readability/extensibility: module boundaries, coupling, dead abstractions, and naming quality.
 - Test strategy gaps: missing integration/contract/load tests for critical paths.
 - Onboarding quality: concise docs, runbooks, architecture notes, and executable examples.
@@ -111,6 +118,7 @@ Check for:
 - Rare-state transitions and multi-step flow interactions that break invariants.
 - Time boundaries, timezone drift, retries, duplicate events, and out-of-order processing.
 - Cross-system races (jobs, webhooks, external providers, same-host side effects).
+- Callback stale-write races: verify async verification/reconciliation responses cannot overwrite newer user edits via full-record updates.
 - Non-obvious abuse chains combining medium findings into critical outcomes.
 - Spec-vs-implementation mismatches hidden in user stories rather than obvious code smells.
 - Structural anomalies: self-links and indirect cycles in hierarchical data.
@@ -152,6 +160,10 @@ Run this sweep for every audit, regardless of stack:
 - Cache/permission freshness: verify permission and lifecycle changes invalidate stale cache/session views.
 - Resource ceilings: verify caps/backpressure/TTL for queues, maps, fan-out loops, and payload parsing paths.
 - Startup/recovery resilience: verify transient dependency failures do not permanently poison initialization state.
+- Entitlement parity and async revalidation: verify policy checks exist on all trigger paths and are revalidated when work is dequeued/executed.
+- Callback write safety: verify callback/verification handlers use conditional field-scoped updates (or version checks) rather than stale full-object rewrites.
+- Provider-policy explicitness: verify app-required billing/lifecycle semantics are encoded explicitly, not left to third-party defaults.
+- URL/query safety in navigation: verify pagination/filter controls preserve reserved characters via encoding-safe mechanisms (for example GET forms with hidden fields).
 
 ## Runtime Module: Bun + SQLite
 
