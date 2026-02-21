@@ -47,13 +47,17 @@ Before specialist pass 1, map critical invariants to every mutating path (HTTP r
 - Access lifecycle invariants: permission changes (disable/revoke/role change) must take effect across active credentials and privileged actions.
 - Entitlement invariants: plan/tier/feature gates must be enforced on every trigger path (API/UI/webhook/job), and queued work must re-check entitlement at execution time.
 - Input/protocol invariants: validation, canonicalization, parser behavior, and payload size/media-type policy must be consistent across equivalent paths.
+- Sentinel semantics invariants: special values (for example `0`, empty, `NULL`) must have one canonical meaning across UI/API/webhook/worker paths.
 - State-transition invariants: lifecycle transitions (active/archived/deleted/expired) must be explicit, legal, and consistently enforced.
+- Cross-trigger policy invariants: business rules (for example downgrade timing, reset authority, pause/resume criteria) must remain consistent across user actions, provider callbacks, and background workers.
+- Mutation outcome invariants: state-changing handlers must only signal success (UX/audit/events) after durable write success; persistence failures must be surfaced.
 - Write-freshness invariants: callback/verification paths must avoid stale full-record rewrites; use conditional field-scoped updates for concurrent edit safety.
 - Idempotency/order invariants: retries, duplicates, and out-of-order events must not corrupt state or duplicate side effects.
 - Time-window invariants: timezone and boundary behavior (expiry, rollovers, DST) must be deterministic.
 - Resource-boundedness invariants: loops, fan-out, queues, and in-memory maps must have caps/backpressure/cleanup.
 - External dependency invariants: timeouts, partial failures, fallback behavior, stale-cache behavior, and explicit provider policy parameters must be intentional.
-- Observability invariants: high-risk state changes and failures must emit actionable, traceable signals.
+- Observability invariants: high-risk state changes and failures must emit actionable, traceable signals with required schema fields (actor/target and before/after context where applicable).
+- Deployment/automation invariants: deployment docs and release scripts must align with CI artifact strategy, branch policy, and path-specific ingress controls.
 Add domain-specific invariants discovered during context build; do not constrain to this list.
 Treat missing parity across equivalent paths as a finding candidate.
 
@@ -101,6 +105,15 @@ Enforce these requirements:
 - Verify derived-metric parity: UI formulas and summaries include all policy-required components (for example top-ups, adjustments, and resets), not just base plan values.
 - Verify external billing/provider contract explicitness: behavioral requirements (for example proration/cancel timing/status sync) must be set in code/webhook handling, not left to provider defaults.
 - Verify pagination/filter carryover safety: user-supplied query params survive page transitions without raw interpolation/encoding drift.
+- Verify cross-trigger lifecycle parity: the same business rule is enforced across interactive routes, provider webhooks, and async workers.
+- Verify sentinel-value parity: special configuration values (for example `0` limits) have consistent semantics across all interfaces and documentation.
+- Verify mutation-outcome integrity: state-changing handlers do not swallow write errors and then emit success UX/audit outcomes.
+- Verify deployment artifact policy parity: if CI publishes production artifacts, runbooks/scripts/services should deploy artifacts directly unless explicitly documented otherwise.
+- Verify ingress isolation for signed callbacks/webhooks: deployment docs should define dedicated path controls (header gates/rate policy), not only generic catch-all routing.
+- Verify simulation endpoint parity: test/sandbox endpoint payloads should match production contract shape plus explicit test marker fields.
+- Verify release automation branch parity: branch checks, push targets, and docs use the same canonical branch name.
+- Verify evidence boundaries: classify acceptance criteria as repo-verifiable vs environment-verifiable; report external infra items as unverified assumptions unless runtime evidence is provided.
+- Verify security-hardening doc parity: when implementation is stricter/safer than spec, treat as doc/criteria drift to reconcile, not an implementation regression.
 - Verify remediation traceability: findings-to-fixes status should remain mapped in a live checklist/spec so handoff can continue without hidden assumptions.
 - For each High/Critical finding, include at least one focused regression test/check.
 

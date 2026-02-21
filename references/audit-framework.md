@@ -42,16 +42,23 @@ Minimum invariants to include in every audit:
 - Entitlement and policy invariants (plan/tier/feature flags and expensive-operation rights are enforced across API/UI/webhook/job paths, with revalidation before queued execution).
 - Identity lifecycle invariants (disable/revoke/role changes take effect across active sessions/tokens/keys).
 - Input/protocol invariants (validation, canonicalization, parser behavior, and payload/media-type limits are consistent across equivalent entry points).
+- Sentinel semantics invariants (special values such as `0`, empty, and `NULL` have consistent meaning across interfaces and persistence logic).
 - Uniqueness/conflict invariants (business uniqueness and conflict rules are datastore-enforced, not only app pre-checks).
 - Lifecycle/state-machine invariants (active/archived/deleted/expired transitions are explicit and enforced consistently in read + write + destructive paths).
+- Cross-trigger policy invariants (the same business policy remains consistent across user/API flows, provider callbacks, and asynchronous workers).
+- Mutation-outcome invariants (success responses, audit events, and side effects are emitted only after durable write success).
 - Write-freshness invariants (callback/verification/reconciliation paths avoid stale full-record rewrites; concurrent edits cannot be silently reverted).
 - Idempotency/order invariants (retries, duplicate events, and out-of-order delivery cannot produce duplicate side effects or invalid state).
 - Time semantics invariants (timezone/DST/window boundaries and expiry logic are deterministic).
 - Resource-boundedness invariants (pagination, fan-out, in-memory maps, queue growth, and retries have bounds/backpressure).
 - External dependency degradation invariants (timeouts, retries, fallback, and partial-failure behavior are explicit and testable).
 - External-authority reconciliation invariants (provider state changes map deterministically to local entitlement/status fields, including all required update events).
-- Observability/auditability invariants (high-risk mutations and failures are traceable with actionable context).
+- Observability/auditability invariants (high-risk mutations and failures are traceable with actionable context and required schema fields such as actor/target and before/after context where policy expects it).
 - Contract evolution invariants (deprecations and replacements fail explicitly and remain docs/config/spec parity-safe).
+- Security-hardening doc invariants (if implementation intentionally strengthens security over spec/docs, documentation and acceptance criteria are updated to the new baseline).
+- Deployment/runbook invariants (CI artifact strategy, service bootstrap steps, ingress snippets, and release scripts remain mutually consistent and executable).
+- Simulation/contract invariants (test/sandbox/debug endpoints preserve production payload shape except explicit test markers).
+- Evidence-scope invariants (repo audit conclusions distinguish code-verifiable vs environment-verifiable requirements).
 
 ## Role Checklists
 
@@ -64,6 +71,7 @@ Check for:
 - Idempotency/replay gaps, webhook signing/verification errors, race-prone state transitions.
 - DDoS abuse surfaces: unbounded endpoints, expensive queries, amplification paths, missing rate limits.
 - Entitlement bypass surfaces: expensive operations must enforce plan/tier gates on all invocation paths, not only UX entry points.
+- Signed-callback ingress surfaces: webhook/provider callback paths should have dedicated ingress controls (path isolation, signature-header prefiltering, and policy-appropriate rate limits).
 - Deactivation semantics: disabling users/admins must revoke active sessions/tokens/keys and auth middleware must re-check active status.
 - Parser/policy bypasses: endpoints should not allow oversized or unexpected payload classes through content-type exceptions.
 - In-memory abuse controls: request-keyed maps (for example login attempts by IP) must have stale-key eviction and hard caps to prevent memory growth under scans.
@@ -102,6 +110,12 @@ Check for:
 Check for:
 - API clarity: stable contracts, explicit errors, pagination/filter semantics, and versioning hygiene.
 - Provider-contract completeness: external API defaults that affect user-visible billing/lifecycle behavior should be explicit in request/webhook code and test-covered.
+- Build/deploy/release parity: deployment docs, CI artifacts, system service units, and release scripts should agree on branch policy and artifact-vs-compile execution model.
+- Simulation payload parity: test/probe endpoints should emit production-shaped payloads with explicit markers rather than ad hoc minimal objects.
+- Audit schema parity: audit events should include required target and state-diff fields defined by policy/spec.
+- Mutation error signaling parity: mutating handlers should propagate write failures (or explicit failure UX) and avoid success logs/redirects on failed writes.
+- Sentinel-config parity: shared config values (for example numeric limits) should have one documented meaning across UI/API/worker paths.
+- Security hardening parity: stronger implementation controls should be reflected in specs/runbooks to prevent stale weaker guidance.
 - Code readability/extensibility: module boundaries, coupling, dead abstractions, and naming quality.
 - Test strategy gaps: missing integration/contract/load tests for critical paths.
 - Onboarding quality: concise docs, runbooks, architecture notes, and executable examples.
@@ -119,6 +133,8 @@ Check for:
 - Time boundaries, timezone drift, retries, duplicate events, and out-of-order processing.
 - Cross-system races (jobs, webhooks, external providers, same-host side effects).
 - Callback stale-write races: verify async verification/reconciliation responses cannot overwrite newer user edits via full-record updates.
+- Policy drift across trigger classes: verify lifecycle rules are not implemented differently in route handlers, webhook handlers, and workers.
+- Silent-failure success paths: verify transient write failures cannot produce success UX, success audit rows, or state-desync side effects.
 - Non-obvious abuse chains combining medium findings into critical outcomes.
 - Spec-vs-implementation mismatches hidden in user stories rather than obvious code smells.
 - Structural anomalies: self-links and indirect cycles in hierarchical data.
@@ -164,6 +180,15 @@ Run this sweep for every audit, regardless of stack:
 - Callback write safety: verify callback/verification handlers use conditional field-scoped updates (or version checks) rather than stale full-object rewrites.
 - Provider-policy explicitness: verify app-required billing/lifecycle semantics are encoded explicitly, not left to third-party defaults.
 - URL/query safety in navigation: verify pagination/filter controls preserve reserved characters via encoding-safe mechanisms (for example GET forms with hidden fields).
+- Cross-trigger policy parity: verify equivalent business transitions (for example downgrade timing, reset authority, pause/resume rules) do not diverge between interactive, callback, and worker paths.
+- Sentinel semantics parity: verify special values (for example `0`) keep identical behavior across APIs, admin panels, and background logic.
+- Mutation acknowledgement integrity: verify state-changing handlers do not ignore datastore write errors before emitting success responses/audit signals.
+- Artifact-first deploy parity: if build pipeline ships production artifacts, verify runbooks/scripts avoid unnecessary on-host compilation and toolchain coupling.
+- Signed webhook ingress isolation: verify deployment guidance includes dedicated callback ingress snippets with explicit prefilter and rate policy, not only generic catch-all locations.
+- Simulation endpoint contract parity: verify synthetic/test payloads mirror production schema plus explicit test marker fields.
+- Release branch consistency: verify branch checks and push targets in release automation use one canonical default branch.
+- Evidence boundary classification: verify final report separates repository-validated findings from environment-only checks requiring runtime/infra access.
+- Spec-hardening drift: verify stronger security implementation details are propagated into specs/acceptance criteria to avoid false regression labeling.
 
 ## Runtime Module: Bun + SQLite
 
