@@ -11,6 +11,7 @@ Run an expert-panel audit with strict sequencing and one unified output document
 Produce findings first, sorted by severity, with file references, exploit/perf/flow impact, and actionable fixes.
 For local desktop utilities, treat privileged OS integration, local privacy leakage, same-user abuse, and release-toolchain trust as first-class risk areas rather than defaulting to server-style findings.
 For privacy-sensitive desktop flows, treat the global pasteboard as a shared side channel, not a harmless transport layer; audit clipboard managers, same-user listeners, and restoration races whenever the app touches it.
+For CI/CD, release, and infrastructure automation, treat external records and side effects (deployments, statuses, tags, releases, caches, environments, cloud objects) as durable state; audit creation, cancellation, cleanup, and provenance matching end-to-end.
 When the product edits OS-owned or user-owned config artifacts such as launchd plists, crontabs, `.env` files, or other flat files, explicitly audit:
 - identifier-to-path derivation and traversal resistance
 - hidden-artifact creation via dot-prefixed or otherwise scanner-skipped names
@@ -21,6 +22,7 @@ When the product edits OS-owned or user-owned config artifacts such as launchd p
 - stale-index versus fingerprint-based conflict safety for line-oriented edits
 
 Load `references/audit-framework.md` before starting the analysis.
+When a third-party reviewer, bot, human reviewer, or later fresh-eyes pass finds issues after this skill already ran, treat that as audit feedback to improve shift-left coverage. Reconcile the feedback, extract the missed invariant, and update the relevant audit checklist or prompt guidance when the lesson is reusable.
 
 ## Required Inputs
 
@@ -74,8 +76,16 @@ Before specialist pass 1, map critical invariants to every mutating path (HTTP r
 - Observability invariants: high-risk state changes and failures must emit actionable, traceable signals with required schema fields (actor/target and before/after context where applicable).
 - Editable-surface invariants: fields exposed as editable in UI/API must be durably persisted or explicitly documented and enforced as immutable.
 - Deployment/automation invariants: deployment docs and release scripts must align with CI artifact strategy, branch policy, and path-specific ingress controls.
+- Automation provenance invariants: destructive cleanup of external records must identify ownership with stable provenance evidence and boundary-safe identifiers, not broad branch/SHA/environment/name filters.
+- Cancellation/stale-run invariants: external side effects created before skipped, failed, or canceled automation must be prevented up front or cleaned by an independent later path.
+- Fast-path/fallback parity invariants: optimized paths and fallback paths must produce behaviorally equivalent artifacts/state with the same compiler/runtime/toolchain, or the intentional divergence must be documented and tested.
+- Producer/consumer timing invariants: async producers and consumers must be checked as a DAG with realistic scheduling, queueing, and timeout windows; existence of a produced artifact is not enough if the consumer can start before it is available.
+- Retry/attempt identity invariants: reruns, partial reruns, workflow attempts, sharded retries, and manual restarts must resolve the same logical artifact/state when that is intended, and must not silently look for a different attempt-scoped name.
+- Schema-derived optionality invariants: config/secret/env validation must classify required versus optional/defaulted keys from the authoritative runtime schema, not only from declaration files or rendered templates.
+- Shared test-state invariants: test speedups that reuse databases, caches, workspaces, workers, or ports must prove clean state on process crash, cancellation, retry, and cross-file reuse, not only on the happy-path teardown.
 Add domain-specific invariants discovered during context build; do not constrain to this list.
 Treat missing parity across equivalent paths as a finding candidate.
+Apply any relevant overlay in the Domain-Specific Audit Overlays section below before specialist pass 1; add overlay-specific invariants to the matrix instead of keeping them as separate notes.
 
 3. Pass 1 Specialist Reviews
 Run role-specific analysis in this order:
@@ -109,7 +119,24 @@ When sub-agent tooling is available and permitted by the active instructions/use
 
 If sub-agents are unavailable or not permitted, state that constraint and continue with the main-thread audit workflow.
 
-7. Final Report
+7. External Feedback Reconciliation
+When auditing an active PR or change with bot/human reviewer feedback:
+- Fetch the latest review threads/comments and evaluate them against the current head, not stale line numbers or prior commit state.
+- Classify each item as actionable defect, worthwhile hygiene, false positive, stale/already fixed, or out of scope; only fix or report items with concrete evidence.
+- For each actionable item, extract the underlying invariant and add the narrowest regression check that proves the exact failure mode cannot recur.
+- Treat permissive fallback predicates in destructive automation as suspect: if the fallback is effectively dead or weaker than the primary provenance check, remove it or document and test why it is safe.
+- After fixes, rerun focused verification and re-check whether late review feedback introduced new meaningful findings before finalizing.
+
+When external feedback finds a meaningful issue that prior audit passes missed, also perform a miss analysis:
+- Missed invariant: the general rule the audit failed to check.
+- Missed evidence: file, runtime behavior, test, log, or reviewer context that should have been inspected.
+- Missed role: which role should have caught it and what prompt/checklist wording would have led there.
+- Missed verification: the focused test or probe that would have exposed it before review.
+- Scope disposition: whether this should update `SKILL.md`, `references/audit-framework.md`, a domain overlay, a repo-local skill, or only the current report.
+
+For reusable lessons, patch this skill or its reference checklist in the same task when allowed. Keep additions invariant-first and stack-agnostic unless the miss is clearly domain-specific.
+
+8. Final Report
 Publish one document from the tie-breaker lead with:
 - Findings first (ordered by severity, then blast radius, then exploitability).
 - Open questions/assumptions.
@@ -155,6 +182,15 @@ Enforce these requirements:
 - Verify lazy-detail cache freshness: once detail loading becomes on-demand, refresh and collapse paths must invalidate hidden-row detail caches or the UI can surface stale history while the summary row is fresh.
 - Verify suggestion/recommendation boundedness: expensive suggestion engines should prefilter candidate pools, reuse shared lookups, and avoid being invoked for every list row by default.
 - Verify integration-test env parity: when the app under test runs in a separate process, env mutations in the test runner after process spawn do not affect server behavior; configure env before spawn or move env-sensitive checks to unit-level coverage.
+- Verify external automation cleanup provenance: delete/cleanup jobs should correlate records to the intended run or owner with exact, boundary-safe identifiers and should include regression coverage for prefix/collision cases.
+- Verify canceled-run external state integrity: if an automation can be canceled after creating external state, a later independent cleanup path or creation-prevention strategy must cover it.
+- Verify review-feedback convergence: late bot/human audit comments should be triaged against the current head and converted into invariants plus focused tests when actionable.
+- Verify producer/consumer scheduling for artifact promotion: the consumer's wait/poll window must be realistic relative to the producer's full critical path, including cache misses, upload latency, and job queueing.
+- Verify rerun identity for CI artifacts and caches: names keyed by run attempt, shard id, branch, or matrix cell must still work for partial reruns and "rerun failed jobs" paths, or intentionally fall back with clear telemetry.
+- Verify fast-path/fallback output parity: promoted/restored artifacts and locally rebuilt artifacts should use the same compiler/runtime/build command and required entrypoint checks unless divergence is explicitly tested.
+- Verify fail-open/fail-closed consistency for optional optimization paths: every probe/download/cleanup/report step on a best-effort speedup must have the intended nonfatal/fatal behavior, including small "mark reason" and cleanup steps.
+- Verify schema-backed env/secret optionality: deploy validation should distinguish required, optional, defaulted, and deprecated keys from the authoritative config schema and fail only for the intended classes.
+- Verify shared test-state crash recovery: reused DB/cache/worker slots must run a defensive setup-time cleanup or generation check so a killed prior process cannot leak state into the next process.
 - For each High/Critical finding, include at least one focused regression test/check.
 
 ## Safety and Policy Guardrails
@@ -185,3 +221,76 @@ List focused tests/checks to confirm each major fix.
 Always apply the runtime-agnostic checklist in `references/audit-framework.md` (`Runtime-Agnostic Edge Sweep`).
 If a stack-specific module exists in that file and matches the target stack, apply it as an additive overlay, not a replacement.
 If no module matches, infer and state the top stack-specific risk assumptions, then continue the audit.
+
+## Domain-Specific Audit Overlays
+
+Use these overlays only when the target domain matches. They add to the invariant matrix and role checklists; they do not replace the baseline workflow.
+
+### Queues, Idempotency, And Locks
+
+Use for outboxes, schedulers, claim workers, idempotency records, repo locks, filesystem locks, retries, and distributed dispatch:
+- Prove every accepted unit of user work is either durable or explicitly documented as lossy before returning success.
+- Verify crash recovery for `running`, `claimed`, `pending`, `retryable`, `degraded`, `terminal`, and manual-review states.
+- Verify ambiguous side effects do not create duplicate work or immortal retry loops.
+- Verify 4xx/409/425/provider-specific statuses map to retry, review, or terminal states intentionally.
+- Release only owner-token locks and prove stale-lock recovery cannot delete a newly reacquired lock.
+- Add focused tests for each High/Critical finding that simulate crash, timeout, duplicate, stale owner, and manual recovery paths.
+
+### CI/CD, Test Infrastructure, And Artifact Promotion
+
+Use for GitHub Actions, merge queues, deployment workflows, build caches, artifact promotion, test sharding, reusable workflows, and local/CI test harness speedups:
+- Model workflow jobs as a real DAG. Verify `needs`, `if`, `always()`, skipped prerequisite semantics, cancellation, queue delay, and final gate behavior inside the specific job block being audited, not by global string search.
+- For promoted artifacts, trace producer completion time to consumer use time. Include cache-cold builds, separate export/upload steps, artifact propagation latency, partial reruns, and manual "rerun failed jobs" attempts.
+- Treat optimized paths and fallback paths as equivalent contracts. Compare compiler/runtime/build commands, generated files, required entrypoints, environment variables, permissions, and cleanup side effects between the fast path and fallback path.
+- For best-effort speedups, classify every step as intentionally fail-open or fail-closed. Small diagnostic, marker, cleanup, and report steps must not accidentally turn an optional optimization failure into a job failure.
+- For deploy-only/redeploy paths, prove deployability with immutable manifests and artifact metadata, not only image/tag/blob existence. Treat auth, network, and non-404 storage errors differently from missing artifacts.
+- For secret/env/config checks, derive requiredness from the runtime schema or equivalent authority. Report optional/defaulted drift separately from deploy-blocking missing required values.
+- For shared test infrastructure, prove crash/cancel isolation. Reused databases, caches, workers, slots, ports, and temp dirs need setup-time cleanup or generation tokens because teardown hooks do not run after OOM/SIGKILL/cancelled jobs.
+- For cache-key changes, include runtime/toolchain/package-manager/workspace-manifest provenance and then inspect whether the cache is actually hit, stale, overbroad, or too expensive to restore.
+- For workflow permission changes, audit every job that writes statuses, deployments, artifacts, checks, comments, packages, tags, releases, or dispatches workflows; top-level permission tightening can silently remove needed job capabilities.
+- Add focused probes or assertions for non-obvious workflow behavior: parse the workflow, inspect the target job's actual dependencies/conditions, mock artifact names across attempts, and validate archive restore safety before extraction.
+
+### SSH Bootstrap And Remote Worker Trust
+
+Use for worker provisioning, dispatch over SSH, known_hosts pinning, remote doctor checks, and tailnet hosts:
+- Normalize SSH user, host, and port once and reuse that tuple for `ssh-keyscan`, known_hosts lookup, config, doctor output, and dispatch.
+- Treat TOFU as bootstrap-only. Steady-state dispatch should enforce pinned trust or fail with actionable operator guidance.
+- Verify config schema, backwards compatibility, provisioning, doctor, worker dispatch, and documentation together.
+- Verify remote non-interactive shells use the same PATH/runtime contract as doctor checks.
+- Verify key rotation paths require explicit operator action and do not silently replace pins.
+
+### macOS Release Closure
+
+Use for local macOS apps, `.app` bundles, release helpers, signing, notarization, stapling, Gatekeeper, and package outputs:
+- Distinguish local dev/performance install lanes from distributable/notarized release lanes.
+- Verify artifact inventory, stale promoted outputs, helper-path trust, cleanup traps, and output-root canonicalization.
+- Reject artifact roots inside `.app` bundles or managed package roots.
+- Verify direct helper invocation and top-level wrapper behavior, not only wrapper env scrubbing.
+- For distributable lanes, verify built output signing, notarization acceptance, stapling, and Gatekeeper evidence.
+
+### SwiftUI/AppKit Preview, Export, And Editor Freshness
+
+Use for timeline editors, previews, exports, SwiftUI/AppKit bridge code, and cached derived artifacts:
+- Trace every preview/export surface to the authoritative current draft/settings source.
+- Verify async preview cancellation cancels real work, not only stale UI application.
+- Verify zoom/scroll/key-monitor state is scoped low enough to avoid broad recomputation or disabled-state bypass.
+- Preserve unknown persisted enum cases and avoid coercion on view appearance.
+- Verify hidden/disabled semantics across preview loops, compilers, validators, cache keys, and tests.
+
+### Parser, Import, And Personal-Finance Reconciliation
+
+Use for CSV/PDF/OCR-adjacent parsers, financial imports, utility bills, split allocation, and reconciliation:
+- Test parsers with real extraction snapshots or source artifacts, not only hand-normalized fixtures.
+- Verify original file bytes are stored and hashed before parser APIs can detach or consume buffers.
+- Verify duplicate detection uses semantic identity only when strong identifiers exist; do not collapse same-period same-amount records without a strong bill/invoice/reference key.
+- Distinguish raw provider period fields from weak date heuristics.
+- Keep manual reconciliation authority separate from auto-finalization.
+
+### UI State, Persistence, And Detail Loading
+
+Use for dashboards, admin tools, list/detail screens, bulk actions, and editable forms:
+- Verify URL filters, refresh scope, visible data, and bulk-action scope stay aligned.
+- Verify editable fields persist or are explicitly immutable.
+- Verify collapsed summary rows do not eagerly fan out into detail requests when on-demand detail would preserve the workflow.
+- Verify hidden detail caches invalidate on refresh, collapse, context switch, and import/reparse events.
+- Verify destructive child-row actions disclose parent/sibling blast radius.

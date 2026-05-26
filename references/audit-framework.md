@@ -29,6 +29,7 @@ Use this structure for every finding:
 ## Invariant Coverage Matrix (Required)
 
 Build this before role pass 1, then reuse it in pass 2.
+When prior audits, third-party reviewers, or later fresh-eyes passes produced findings, include a "missed invariant" row for each non-duplicate issue so future passes check the generalized rule rather than the incident narrative.
 
 For each invariant, list all mutating entry points (routes, webhooks, workers, scripts) and verify parity:
 - Invariant: what must always remain true.
@@ -66,6 +67,14 @@ Minimum invariants to include in every audit:
 - Contract generation invariants (route/schema generators correctly parse real declaration styles and surface omissions via deterministic stale checks).
 - Security-hardening doc invariants (if implementation intentionally strengthens security over spec/docs, documentation and acceptance criteria are updated to the new baseline).
 - Deployment/runbook invariants (CI artifact strategy, service bootstrap steps, ingress snippets, and release scripts remain mutually consistent and executable).
+- Automation provenance invariants (destructive cleanup of external records such as deployments, releases, statuses, tags, caches, or cloud objects must use stable provenance evidence with exact/boundary-safe identifiers, not only broad branch/SHA/environment/name filters).
+- Cancellation/stale-run invariants (automation that creates external side effects before cancellation, skip, or failure must either prevent those side effects or provide an independent cleanup path on a later run).
+- Producer/consumer timing invariants (artifact/cache/status producers and consumers must be checked as a scheduled DAG with realistic wait windows, queue delays, upload propagation, and cache-cold paths).
+- Retry/attempt identity invariants (partial reruns, workflow attempts, matrix shards, and manual restarts must resolve the intended logical artifact/cache/state, not silently switch to a new attempt-scoped name).
+- Fast-path/fallback parity invariants (optimized paths and fallback paths must produce equivalent outputs with the same compiler/runtime/toolchain and required entrypoint checks, or document and test the divergence).
+- Fail-open/fail-closed optimization invariants (optional speedups must consistently degrade to the safe baseline; tiny marker, cleanup, and reporting steps cannot accidentally become fatal unless intended).
+- Schema-derived config invariants (secret/env/config validators must derive required/optional/defaulted status from the authoritative runtime schema or equivalent source).
+- Shared test-state invariants (test speedups that reuse databases, caches, workers, slots, temp dirs, or ports must prove setup-time cleanup/generation safety after crash, cancel, OOM, and cross-file reuse).
 - Simulation/contract invariants (test/sandbox/debug endpoints preserve production payload shape except explicit test markers).
 - Evidence-scope invariants (repo audit conclusions distinguish code-verifiable vs environment-verifiable requirements).
 
@@ -85,6 +94,9 @@ Check for:
 - Debug/dev fixture routes: data-seeding or test-only endpoints must be environment-gated or stripped from production surfaces; authentication alone is not a sufficient safeguard.
 - Deactivation semantics: disabling users/admins must revoke active sessions/tokens/keys and auth middleware must re-check active status.
 - Parser/policy bypasses: endpoints should not allow oversized or unexpected payload classes through content-type exceptions.
+- Body-size enforcement: application handlers should enforce byte caps while streaming or before full buffering; reverse-proxy limits alone are not enough.
+- Signed-token payload safety: avoid delimiter-joined signed payloads when fields can contain delimiters; prefer structured/length-safe encoding and test expiry/claim parsing.
+- Destructive automation guardrails: delete/cleanup scripts should prove record ownership via exact provenance evidence; weak substring, prefix, name, or broad SHA/environment matching can delete the wrong external record.
 - In-memory abuse controls: request-keyed maps (for example login attempts by IP) must have stale-key eviction and hard caps to prevent memory growth under scans.
 - Canonicalization and parser split-brain risks (Unicode normalization, case-folding, path normalization, mixed parser behavior across interfaces).
 - High-risk operation safeguards (step-up auth/explicit confirmation/anti-automation controls where irreversible actions exist).
@@ -99,11 +111,13 @@ Check for:
 - N+1 queries, full scans, missing indexes, lock contention, and transaction scope bloat.
 - Hot-path CPU/memory pressure, heavy sync work in request loops, and avoidable serialization cost.
 - Inefficient build/runtime workflows: tasks that should move to async queues, batch jobs, or cron.
+- CI producer/consumer timing: artifact/cache promotion must be measured against actual job DAG timing, cache-cold producer duration, upload latency, and consumer wait windows.
 - Frontend payload bloat, hydration/render hotspots, and cache invalidation failures.
 - Throughput/latency tail behavior under contention and degraded dependency modes.
 - Cost-amplification paths: heavy operations (for example backfills/replays/rebuilds) should require explicit entitlement checks plus bounded execution.
 - Fan-out dependency resilience: aggregation endpoints calling multiple upstream entities should use bounded concurrency and per-entity error handling so one failure does not blank the full response.
 - Retry-storm and backpressure behavior under provider latency/failure, including queue saturation risk.
+- Paid-work cancellation boundaries: cancellation/refund should stop at the point external execution is claimed/submitted unless the provider offers confirmed cancellation semantics.
 - Pagination/sort stability and large-cardinality behavior (no unbounded response assembly paths).
 
 ### UX Expert
@@ -127,6 +141,8 @@ Check for:
 - API clarity: stable contracts, explicit errors, pagination/filter semantics, and versioning hygiene.
 - Provider-contract completeness: external API defaults that affect user-visible billing/lifecycle behavior should be explicit in request/webhook code and test-covered.
 - Build/deploy/release parity: deployment docs, CI artifacts, system service units, and release scripts should agree on branch policy and artifact-vs-compile execution model.
+- Fast-path/fallback parity: promoted/restored artifacts, deploy-only paths, and locally rebuilt fallbacks should use equivalent build commands, runtime versions, env, permissions, and entrypoint validation.
+- Secret/config validation parity: deployment blockers should match runtime-required config, with optional/defaulted drift reported separately.
 - Simulation payload parity: test/probe endpoints should emit production-shaped payloads with explicit markers rather than ad hoc minimal objects.
 - Audit schema parity: audit events should include required target and state-diff fields defined by policy/spec.
 - Mutation error signaling parity: mutating handlers should propagate write failures (or explicit failure UX) and avoid success logs/redirects on failed writes.
@@ -134,14 +150,17 @@ Check for:
 - Sentinel-config parity: shared config values (for example numeric limits) should have one documented meaning across UI/API/worker paths.
 - Security hardening parity: stronger implementation controls should be reflected in specs/runbooks to prevent stale weaker guidance.
 - Code readability/extensibility: module boundaries, coupling, dead abstractions, and naming quality.
+- Primitive reuse: before accepting bespoke lock/cache/queue/rate-limit/provider-client code, search for existing project primitives and require a concrete mismatch before custom infrastructure logic remains.
 - Test strategy gaps: missing integration/contract/load tests for critical paths.
 - Onboarding quality: concise docs, runbooks, architecture notes, and executable examples.
 - LLM/operator friendliness: discoverable conventions and deterministic workflows.
+- CLI state secrecy: session/key state files should be written with restrictive permissions and chmodded after overwrites, not only created with a restrictive mode.
 - Cross-route consistency: equivalent capabilities must enforce equivalent validation/invariants.
 - Deprecation contract parity: deprecated endpoints should return explicit, machine-readable replacement details and consistent status semantics.
 - Bot-instruction parity: API docs and agent/skill guidance must match live endpoint behavior (including batch orchestration limits and lifecycle semantics).
 - Contract-generation robustness: route/spec generation should be resilient to multiline/decorated declarations and protected by freshness checks that fail on omissions.
 - Remediation traceability: findings should map to an implementation checklist/spec with closure status so handoffs can continue without re-auditing from scratch.
+- Review-feedback hygiene: bot/human review comments should be evaluated against the current head, classified as actionable/stale/false-positive/hygiene, and converted into invariants plus focused checks when real.
 - Change safety rails: feature flags/migrations/config toggles should include rollback and compatibility strategy.
 - Release tooling trust parity: scripts used on signing/notarization/release machines should resolve helper binaries from trusted explicit paths, not from `PATH` or broad workspace / DerivedData searches.
 - Preview/export source-of-truth parity: exported output should render from current authoritative settings or state, not from stale async preview caches.
@@ -160,6 +179,10 @@ Check for:
 - Structural anomalies: self-links and indirect cycles in hierarchical data.
 - Context-shift races: switching global context while a page/process is active must not leave stale data, invalid query shapes, or half-updated summaries.
 - Matcher disambiguation edges: explicit mappings should beat heuristics, and near-matches should avoid partial-token false positives.
+- Automation identity edges: exact IDs and provenance links should beat workflow/job/display-name fallbacks; test prefix collisions, stale runs, skipped jobs, and cancellation windows for cleanup logic.
+- Retry/attempt edges: test partial reruns, rerun-failed-jobs, incremented attempts, sharded retries, and manual restart paths for artifact/cache lookup correctness.
+- Shared-state crash edges: test reused test DB/cache/worker/slot state after prior process crash or cancellation, not only after normal teardown hooks run.
+- Optional-optimization edges: verify every probe, marker, cleanup, and report step on a best-effort speedup has the intended fatal/nonfatal behavior under failure.
 - Partial-update edge cases: validate resulting state (`existing + patch`) so cross-field invariants cannot be bypassed.
 - Null/empty/zero/missing ambiguity: ensure business logic does not conflate sentinel states.
 - Cursor/page drift: ensure stable ordering and deterministic pagination under concurrent writes.
@@ -196,6 +219,19 @@ Run this sweep for every audit, regardless of stack:
 - Canonicalization and encoding: verify Unicode/case/path normalization and parser parity across interfaces.
 - Numeric and temporal boundaries: verify precision/overflow/rounding handling and timezone/DST/expiry boundary behavior.
 - Retry/idempotency behavior: verify dedupe keys, idempotency key claiming order, and safe replay semantics.
+- Single-use provider token refresh: verify a durable generation/lease fence, not only a volatile cache lock, prevents a second worker from consuming or revoking the same token generation after lock expiry.
+- Single-use provider refresh degradation: if a consumed/invalid refresh token is intentionally left active for reconciliation instead of revoked, verify retries are backoff-bounded and operator/user-visible rather than hammering the provider on every send.
+- Provider secret minimization: verify token fanout/sync writes fresh credentials only into active/intended credential rows and does not refresh revoked/inactive records.
+- Provider fanout path coverage: when one provider token fanout path is hardened, search for sibling fanout/sync paths that copy the same credential material; the invariant must hold across user-token, bot-token, metadata, and linked install syncs.
+- Provider lifecycle timestamp precision: if provider lifecycle events use coarse timestamps, verify every destructive same-bucket event type, including uninstall and token-revoked, cannot corrupt a newer install; prefer explicit install generation IDs over timestamp-only fencing.
+- Dedupe claim release safety: verify failed handlers release event/claim locks with compare-and-delete or equivalent owner checks, not unconditional deletion.
+- OAuth post-exchange rejection cleanup: verify every local-policy rejection after a provider issues tokens has an explicit cleanup decision, including malformed/missing token-rotation fields and ownership/membership failures.
+- OAuth cleanup freshness: cleanup decisions must re-read current local state at cleanup time and suppress provider uninstall/revoke if the current request or a concurrent request has already persisted an active local install; stale pre-transaction snapshots are not sufficient.
+- OAuth cleanup in-flight safety: a cleanup-time re-read cannot see an uncommitted valid install. Destructive provider cleanup after token exchange should either serialize cleanup and install persistence by the provider install key, use a delayed cleanup/reconciliation job, or fail safe by skipping cleanup when coordination is unavailable.
+- OAuth retry freshness: duplicate-key or transaction retries must re-read current ownership/install state inside the retried operation, not capture a pre-retry snapshot that can become stale after a concurrent writer commits.
+- Handoff/archive verification: verify generated archives against a saved manifest/file list rather than relying on `producer | grep -q` under `pipefail`; early grep exit can SIGPIPE the producer and create false missing-file results.
+- Signed URL/token parsing: verify structured payload encoding, delimiter safety, expiry parsing, and claim binding.
+- Paid job cancellation/refund boundaries: verify refunds are only available before external execution can incur cost, or that provider-side cancellation is confirmed.
 - Claim-worker progress semantics: verify claimed/dequeued jobs always transition attempts/status and clear claim markers across all failure classes.
 - Cache/permission freshness: verify permission and lifecycle changes invalidate stale cache/session views.
 - Resource ceilings: verify caps/backpressure/TTL for queues, maps, fan-out loops, and payload parsing paths.
@@ -209,6 +245,7 @@ Run this sweep for every audit, regardless of stack:
 - Mutation acknowledgement integrity: verify state-changing handlers do not ignore datastore write errors before emitting success responses/audit signals.
 - Editability/persistence parity: verify user-editable fields are not silently dropped between handler and datastore update statements.
 - Artifact-first deploy parity: if build pipeline ships production artifacts, verify runbooks/scripts avoid unnecessary on-host compilation and toolchain coupling.
+- Deploy-only artifact provenance: redeploy/rollback paths that skip build or tests must prove the selected artifact came from a successful gated run, not merely that mutable image tags or object prefixes exist; validate an artifact manifest with image digest, build timestamp, and CDN/object metadata before rollout.
 - Signed webhook ingress isolation: verify deployment guidance includes dedicated callback ingress snippets with explicit prefilter and rate policy, not only generic catch-all locations.
 - Simulation endpoint contract parity: verify synthetic/test payloads mirror production schema plus explicit test marker fields.
 - Release branch consistency: verify branch checks and push targets in release automation use one canonical default branch.
@@ -220,6 +257,16 @@ Run this sweep for every audit, regardless of stack:
 - Async preview/export parity: verify exported output is derived from current source-of-truth settings, not stale asynchronously rendered preview state.
 - Helper-binary trust: verify release / packaging scripts do not execute helper tools from untrusted `PATH` entries or broad filesystem discovery.
 - Relative helper execution safety: if packaging scripts later change directories, helper paths resolved earlier must already be absolute and still valid at execution time.
+- External automation cleanup provenance: destructive CI/CD cleanup should correlate records to the intended run or owner via exact/boundary-safe identifiers and include regression coverage for prefix/collision cases.
+- Canceled-run side-effect cleanup: if automation can be canceled after creating external records, verify a later independent cleanup path or creation-prevention strategy handles the orphaned state.
+- Artifact producer/consumer scheduling: verify consumer wait/poll windows account for the producer's full critical path, including separate export/upload work and cache-cold rebuilds.
+- CI rerun artifact identity: verify artifact/cache names and lookup logic work for partial reruns, incremented run attempts, and shard-specific retries, or fall back with explicit telemetry.
+- Fast-path/fallback artifact equivalence: verify optimized artifact restore/promotion and baseline local rebuild use the same compiler/runtime/toolchain and validate the same runtime-loaded entrypoints.
+- Optional speedup failure policy: verify best-effort speedups consistently fail open to the baseline, while deployability/safety gates fail closed; do not let diagnostic/cleanup/report steps invert that policy.
+- Schema-backed secret optionality: verify missing env/secret checks classify required, optional, defaulted, and deprecated keys from the runtime schema rather than only rendered manifests.
+- Shared test-state crash isolation: verify reused test databases/caches/workers/ports have setup-time cleanup or generation tokens so a killed process cannot contaminate the next test file or shard.
+- Active-review convergence: when auditing a PR with bot/human feedback, verify latest comments against the current head and treat actionable comments as new evidence that must either be fixed or explicitly dispositioned.
+- External-review miss analysis: when a third-party reviewer finds an issue the audit missed, classify whether the miss came from absent invariant coverage, insufficient evidence gathering, stale scope, weak role prompting, missing runtime verification, or missing regression tests.
 
 ## Runtime Module: macOS Desktop Utility
 

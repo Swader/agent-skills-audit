@@ -1,4 +1,4 @@
 interface:
   display_name: "Code Audit Panel"
-  short_description: "Two-pass audits with fresh-eyes convergence."
-  default_prompt: "Use $audit-code to audit this codebase with Security, Performance, UX, DX, and Edge experts, run fresh-eyes convergence when available, then deliver one prioritized tie-breaker report."
+  short_description: "Two-pass audits with fresh-eyes and feedback convergence."
+  default_prompt: "Use $audit-code to audit this codebase with Security, Performance, UX, DX, and Edge experts, run fresh-eyes convergence when available, reconcile external reviewer feedback, and deliver one prioritized tie-breaker report."
