@@ -43,7 +43,9 @@ Minimum invariants to include in every audit:
 - Entitlement and policy invariants (plan/tier/feature flags and expensive-operation rights are enforced across API/UI/webhook/job paths, with revalidation before queued execution).
 - Identity lifecycle invariants (disable/revoke/role changes take effect across active sessions/tokens/keys).
 - Input/protocol invariants (validation, canonicalization, parser behavior, and payload/media-type limits are consistent across equivalent entry points).
+- Cross-layer validation invariants (workflow gates, shell preflights, CLI validators, and runtime/library validators reject the same sentinel and placeholder values before privileged side effects; duplicated lists need parity tests or generation).
 - Local-config path invariants (user-editable identifiers that derive filenames or paths must be canonicalized, allowlisted, bounded, and prevented from escaping the intended root).
+- Config authority invariants (repo/workspace-local config must not downgrade inferred/trusted sensitivity labels, widen read/write scope, grant direct-write modes, or bind local secret env names, network destinations, clone remotes, or privileged local paths unless those values match user-controlled trust; queued/retry paths revalidate the same boundary).
 - Hidden-artifact invariants (identifiers that derive filenames should not create dot-prefixed or otherwise scanner-skipped artifacts that the product can no longer discover or manage).
 - Sentinel semantics invariants (special values such as `0`, empty, and `NULL` have consistent meaning across interfaces and persistence logic).
 - Uniqueness/conflict invariants (business uniqueness and conflict rules are datastore-enforced, not only app pre-checks).
@@ -59,7 +61,17 @@ Minimum invariants to include in every audit:
 - Claim/lease lifecycle invariants (claim-based workers clear claim markers and persist attempts/status on every success/failure exit, avoiding zombie pending work).
 - Time semantics invariants (timezone/DST/window boundaries and expiry logic are deterministic).
 - Resource-boundedness invariants (pagination, fan-out, in-memory maps, queue growth, and retries have bounds/backpressure).
+- Nested-helper boundedness invariants (direct provider-client loops and per-record fanout helpers must not bypass central pagination, retry, timeout, or cap guards).
 - External dependency degradation invariants (timeouts, retries, fallback, and partial-failure behavior are explicit and testable).
+- Lazy initialization invariants (memoized dynamic imports, provider clients, auth material, and singleton startup promises retry after rejection or intentionally enter a surfaced degraded state instead of poisoning the process until restart).
+- External lifecycle freshness invariants (webhook/lifecycle handlers that reuse earlier provider/auth reads still have a write-adjacent freshness check or datastore CAS for external token/install generations not durably fenced in local state).
+- Provider retry/idempotency invariants (retry predicates distinguish transport failures from code bugs, ambiguous POST outcomes are not retried without provider-side dedupe, and informational grouping keys are not mislabeled as idempotency guarantees).
+- Downstream-idempotency retry invariants (a webhook/provider retry is only useful if downstream idempotency has not already consumed the work marker; otherwise prefer terminal ACK plus diagnostics over retry loops that cannot make progress).
+- Bounded-state scan invariants (limits used to protect hot paths must not hide older valid state and fall back to duplicate work; page, cursor, or fail explicitly when the bound is reached).
+- Metrics truthfulness invariants (rates use policy-correct denominators, all-failure/no-success windows do not report healthy zeroes, score inputs are not double-counted unless intentional, sampled/capped windows are marked partial, and duration metrics use timestamp pairs that actually measure the named interval rather than a related event's own runtime).
+- No-data metric invariants (missing series, null datapoints, empty provider responses, and zero baselines remain distinct states; current-window silence should emit/record no-data or omit the delta instead of synthesizing zero-valued trends, and downstream highlights, scores, notification copy, monitors, dashboards, and exported JSON must preserve that no-data state instead of reintroducing a false zero, while zero-to-positive lower-is-better regressions should still be scored as regressions).
+- Operational-visibility invariants (diagnostic tags, guardrail states, and alert-worthy classifier outputs are surfaced by at least one intentional consumer such as a dashboard widget, monitor, digest row, searchable event, or documented artifact; emitted-but-unconsumed metadata is not sufficient observability).
+- Telemetry secrecy invariants (free-form PR titles, deploy reasons, incident summaries, operator inputs, and provider messages are sanitized on live submission paths, not only dry-run output).
 - External-authority reconciliation invariants (provider state changes map deterministically to local entitlement/status fields, including all required update events).
 - Observability/auditability invariants (high-risk mutations and failures are traceable with actionable context and required schema fields such as actor/target and before/after context where policy expects it).
 - Editability/persistence invariants (fields exposed as mutable in UI/API are either durably persisted or explicitly immutable with enforced validation and UX clarity).
@@ -67,6 +79,23 @@ Minimum invariants to include in every audit:
 - Contract generation invariants (route/schema generators correctly parse real declaration styles and surface omissions via deterministic stale checks).
 - Security-hardening doc invariants (if implementation intentionally strengthens security over spec/docs, documentation and acceptance criteria are updated to the new baseline).
 - Deployment/runbook invariants (CI artifact strategy, service bootstrap steps, ingress snippets, and release scripts remain mutually consistent and executable).
+- Privileged workflow trust-boundary invariants (manual dispatch inputs and refs are validated before checkout, local actions, package install, cloud/registry/Kubernetes auth, or secret-bearing env; production paths execute trusted default-branch code or an explicit inert fixture path).
+- Scheduled workflow degradation invariants (cron delay, provider silence, empty discovery, and transient auth/RBAC failures produce deliberate skip/warning/fail-closed behavior rather than unbounded queueing or repeated hard-failure loops).
+- Scheduled workflow timeout invariants (every recurring workflow job with a concurrency group has an explicit timeout shorter than the cadence or an intentional queueing policy).
+- Workflow shell-semantics invariants (process substitution, command substitution, redirections, grouped commands, `set -e`, and `pipefail` propagate producer failures as intended under the actual runner shell).
+- Post-side-effect workflow invariants (if a rollout, external write, or durable publication can succeed before a later gate fails, downstream jobs, compensation paths, observability, and alert wording represent the split state honestly).
+- Resource-selector parity invariants (rollout, verification, telemetry, cleanup, and dashboard/digest queries that claim to describe the same deployed resource set must use equivalent selectors or explicitly document and test the divergence).
+- Fallback-telemetry aggregation invariants (no-data or fallback emissions that preserve post-side-effect observability must not inflate headline success/frequency aggregates unless that is the explicit product meaning; dedicated no-data consumers should be paired with exclusion/collapse logic in primary metrics).
+- Post-side-effect handoff invariants (after a privileged side effect succeeds, later verifier/collector failures should still persist enough summary or marker state for downstream telemetry/fallback paths to run honestly).
+- Post-fix dead-branch invariants (after filtering or narrowing a telemetry path, remove or test stale else-branches and tag values so future maintainers do not revive a known-bad semantic accidentally).
+- Fallback-behavior docs invariants (when production code intentionally emits, suppresses, fans out, or excludes fallback/no-data telemetry, operator docs should name the tags, dashboard/monitor surfaces, and headline-metric treatment).
+- Partial-submission reporting invariants (best-effort multi-step submissions must track/log success per external side effect; a later failure must not be followed by generic "submitted" copy for the failed sub-step).
+- Schedule-copy parity invariants (alert/monitor messages that mention business hours, weekdays, cadence, or recovery windows must match the actual cron, query, and no-data configuration).
+- Environment-parity invariants (prod, staging, preview, dry-run, and replay paths that share a telemetry contract should either share fallback behavior or document/test the intentional asymmetry).
+- Mirrored workflow parity invariants (manual, force, scheduled, redeploy, and standard variants that share a side-effect contract must share equivalent markers, outputs, `if:` gates, telemetry emission, and fallback behavior; fixing one path does not prove its sibling paths are safe).
+- Runtime-command parity invariants (when workflows call CLIs/scripts after a side-effect, verify the runtime command's validation/refusal paths match the workflow comment and gate; a downstream library can still drop or relabel telemetry after YAML conditions are fixed).
+- Replay-state invariants (manual backfills, replays, imports, and idempotency logs must distinguish claimed/started/submitted/failed states, and retry readers should honor the latest terminal state rather than treating any historical sighting as complete).
+- Classifier/tagging invariants (risk classes, change types, ownership/team tags, and route/path classifiers need explicit false-positive probes for overloaded tokens and filename conventions, not only high-confidence positive fixtures).
 - Automation provenance invariants (destructive cleanup of external records such as deployments, releases, statuses, tags, caches, or cloud objects must use stable provenance evidence with exact/boundary-safe identifiers, not only broad branch/SHA/environment/name filters).
 - Cancellation/stale-run invariants (automation that creates external side effects before cancellation, skip, or failure must either prevent those side effects or provide an independent cleanup path on a later run).
 - Producer/consumer timing invariants (artifact/cache/status producers and consumers must be checked as a scheduled DAG with realistic wait windows, queue delays, upload propagation, and cache-cold paths).
@@ -87,6 +116,7 @@ Check for:
 - Cookie-authenticated CORS trust expansion: exact origins should be allowlisted; hostname-only fallbacks are unsafe because cookies ignore ports and can cross from sibling origins on the same host.
 - Injection vectors (SQL/command/template), unsafe deserialization, and tainted sinks.
 - Secrets handling, key management, token lifetime/revocation, and session fixation.
+- Secret leakage through telemetry/logging/event text: live emitters must sanitize free-form strings such as PR titles, incident titles, deploy reasons, and operator messages, even when dry-run output is redacted.
 - Idempotency/replay gaps, webhook signing/verification errors, race-prone state transitions.
 - DDoS abuse surfaces: unbounded endpoints, expensive queries, amplification paths, missing rate limits.
 - Entitlement bypass surfaces: expensive operations must enforce plan/tier gates on all invocation paths, not only UX entry points.
@@ -119,6 +149,8 @@ Check for:
 - Retry-storm and backpressure behavior under provider latency/failure, including queue saturation risk.
 - Paid-work cancellation boundaries: cancellation/refund should stop at the point external execution is claimed/submitted unless the provider offers confirmed cancellation semantics.
 - Pagination/sort stability and large-cardinality behavior (no unbounded response assembly paths).
+- API pagination helpers should have explicit page/item caps and tests for never-ending full pages; provider "view" helpers that silently cap results need paginated alternatives for classifiers and metrics.
+- Search for pagination implemented outside the obvious helper. A capped central client does not protect direct `getJson`/fetch loops in workflow jobs, enrichment helpers, or nested fanout code.
 
 ### UX Expert
 
@@ -141,8 +173,10 @@ Check for:
 - API clarity: stable contracts, explicit errors, pagination/filter semantics, and versioning hygiene.
 - Provider-contract completeness: external API defaults that affect user-visible billing/lifecycle behavior should be explicit in request/webhook code and test-covered.
 - Build/deploy/release parity: deployment docs, CI artifacts, system service units, and release scripts should agree on branch policy and artifact-vs-compile execution model.
+- Workflow shell reliability: review runner shell flags and constructs (`mapfile`, process substitution, pipelines, redirections, grouped writes) with failure-propagation tests for any privileged or release-critical step.
 - Fast-path/fallback parity: promoted/restored artifacts, deploy-only paths, and locally rebuilt fallbacks should use equivalent build commands, runtime versions, env, permissions, and entrypoint validation.
 - Secret/config validation parity: deployment blockers should match runtime-required config, with optional/defaulted drift reported separately.
+- Input validation parity: duplicated YAML/shell and TypeScript/runtime validators should share or regression-test placeholder and sentinel sets, especially when the later step is `continue-on-error`.
 - Simulation payload parity: test/probe endpoints should emit production-shaped payloads with explicit markers rather than ad hoc minimal objects.
 - Audit schema parity: audit events should include required target and state-diff fields defined by policy/spec.
 - Mutation error signaling parity: mutating handlers should propagate write failures (or explicit failure UX) and avoid success logs/redirects on failed writes.
@@ -159,6 +193,7 @@ Check for:
 - Deprecation contract parity: deprecated endpoints should return explicit, machine-readable replacement details and consistent status semantics.
 - Bot-instruction parity: API docs and agent/skill guidance must match live endpoint behavior (including batch orchestration limits and lifecycle semantics).
 - Contract-generation robustness: route/spec generation should be resilient to multiline/decorated declarations and protected by freshness checks that fail on omissions.
+- Manual debug secrecy: docs and runbooks that query credential models must redact top-level and nested token/refresh-token fields, not only the most obvious access token.
 - Remediation traceability: findings should map to an implementation checklist/spec with closure status so handoffs can continue without re-auditing from scratch.
 - Review-feedback hygiene: bot/human review comments should be evaluated against the current head, classified as actionable/stale/false-positive/hygiene, and converted into invariants plus focused checks when real.
 - Change safety rails: feature flags/migrations/config toggles should include rollback and compatibility strategy.
@@ -170,6 +205,9 @@ Check for:
 Check for:
 - Rare-state transitions and multi-step flow interactions that break invariants.
 - Time boundaries, timezone drift, retries, duplicate events, and out-of-order processing.
+- Derived delivery metrics under pathological windows: all failures, no successes, empty windows, capped samples, duplicate score inputs, date-only backfills, and fallback recovery signals should have focused tests before dashboards are trusted.
+- Provider no-data windows are their own edge case: "no datapoint" should not become 0, -100%, or a healthy zero-denominator rate unless that is the explicitly tested product meaning. Follow the state into every operator-facing renderer, highlight selector, notification payload, monitor, dashboard tile, and score formula because false zeroes often reappear after the data-access layer was fixed. Also distinguish a missing prior baseline from a previous value of zero; zero-to-bad transitions often need stronger treatment than ordinary percentage deltas can express.
+- Recovery and duration metrics should be audited against their lifecycle semantics. A rollback or force-deploy event can confirm a change failure, but its own start/finish timestamps measure recovery-action duration, not time-to-recovery, unless the code joins it to the original failure's detection/start time.
 - Cross-system races (jobs, webhooks, external providers, same-host side effects).
 - Callback stale-write races: verify async verification/reconciliation responses cannot overwrite newer user edits via full-record updates.
 - Policy drift across trigger classes: verify lifecycle rules are not implemented differently in route handlers, webhook handlers, and workers.
@@ -235,6 +273,14 @@ Run this sweep for every audit, regardless of stack:
 - Claim-worker progress semantics: verify claimed/dequeued jobs always transition attempts/status and clear claim markers across all failure classes.
 - Cache/permission freshness: verify permission and lifecycle changes invalidate stale cache/session views.
 - Resource ceilings: verify caps/backpressure/TTL for queues, maps, fan-out loops, and payload parsing paths.
+- Workflow shell failure propagation: verify release-critical shell constructs preserve producer failures under the actual runner shell, including process substitution, command substitution, and output-file redirections.
+- Post-side-effect failure states: verify workflows that can fail after a rollout/publication/external write have explicit continuation or compensation for post-rollout jobs, accurate telemetry, and non-misleading alerts.
+- Mirrored workflow parity: after fixing a release/deploy path, search sibling workflows for the same side-effect sequence and compare markers, outputs, `continue-on-error`, `if:` conditions, fallback emits, and notification copy line by line.
+- Runtime refusal path check: for every workflow command expected to emit telemetry or compensation after a failure, inspect the CLI/library guard conditions using the exact flags passed by the workflow; do not stop at "the step now runs."
+- Replay state progression: inspect append/read behavior together; preflight or started markers written before side effects should not suppress future retries unless a later submitted/success marker exists.
+- Scheduled collector no-data handling: verify empty upstream discovery and missing provider data are surfaced as no-data/warning states or explicitly fail-closed; do not let a recurring job fail-loop every interval because no-data is collapsed into mismatch.
+- Scheduled workflow timeout coverage: verify each cron job's explicit timeout and concurrency policy together; fixing one scheduled workflow does not prove sibling scheduled workflows cannot queue for the platform default timeout.
+- Metric truth edge cases: verify failure rates, health scores, highlights, notification copy, and sampled digests across all-failure/no-success windows, no-data windows, zero-denominator windows, duplicate inputs, and cap-hit partial windows.
 - Startup/recovery resilience: verify transient dependency failures do not permanently poison initialization state.
 - Entitlement parity and async revalidation: verify policy checks exist on all trigger paths and are revalidated when work is dequeued/executed.
 - Callback write safety: verify callback/verification handlers use conditional field-scoped updates (or version checks) rather than stale full-object rewrites.
@@ -258,7 +304,9 @@ Run this sweep for every audit, regardless of stack:
 - Helper-binary trust: verify release / packaging scripts do not execute helper tools from untrusted `PATH` entries or broad filesystem discovery.
 - Relative helper execution safety: if packaging scripts later change directories, helper paths resolved earlier must already be absolute and still valid at execution time.
 - External automation cleanup provenance: destructive CI/CD cleanup should correlate records to the intended run or owner via exact/boundary-safe identifiers and include regression coverage for prefix/collision cases.
+- Manual privileged workflow boundary: verify `workflow_dispatch` and reusable deployment workflows validate branch/ref and untrusted inputs before checkout, local actions, package install, auth, or secrets; gates that only wrap final writes are too late.
 - Canceled-run side-effect cleanup: if automation can be canceled after creating external records, verify a later independent cleanup path or creation-prevention strategy handles the orphaned state.
+- Classifier false-positive sweep: for every path/tag classifier, test representative tooling files, docs with risky words, generated configs, and benign filenames that contain high-risk tokens; noisy labels erode operator trust in dashboards and alerts.
 - Artifact producer/consumer scheduling: verify consumer wait/poll windows account for the producer's full critical path, including separate export/upload work and cache-cold rebuilds.
 - CI rerun artifact identity: verify artifact/cache names and lookup logic work for partial reruns, incremented run attempts, and shard-specific retries, or fall back with explicit telemetry.
 - Fast-path/fallback artifact equivalence: verify optimized artifact restore/promotion and baseline local rebuild use the same compiler/runtime/toolchain and validate the same runtime-loaded entrypoints.
