@@ -90,6 +90,7 @@ Before specialist pass 1, map critical invariants to every mutating path (HTTP r
 - Time-window invariants: timezone and boundary behavior (expiry, rollovers, DST) must be deterministic.
 - Resource-boundedness invariants: loops, fan-out, queues, and in-memory maps must have caps/backpressure/cleanup.
 - Nested-helper boundedness invariants: do not stop after finding one central pagination or retry helper with a cap; search for direct provider-client loops and per-record fanout helpers that bypass the central guard.
+- Layered-boundary preservation invariants: when a pipeline must preserve sentinel records such as triggering events, root records, idempotency markers, provenance rows, or user-visible anchors, test every independent limiter. Time windows, provider pagination/page caps, local count caps, character/byte caps, and final formatting/truncation passes can each drop a sentinel after an earlier layer preserved it.
 - Metric-truth invariants: rates and scores must use policy-correct denominators, count catastrophic windows honestly (for example all failures and no successes), avoid accidental double-counting across score pillars, and surface sampled/partial states when caps are hit.
 - No-data metric invariants: empty provider responses, missing series, and null datapoints are not equivalent to zero. Deltas, rates, health scores, generated highlights, and notification renderers need explicit missing-current-data handling so observability outages do not masquerade as real operational improvement, false critical regressions, or collapse.
 - Shared-identity exclusivity invariants: if one external/shared identifier (for example a bank transaction id, provider event id, or import fingerprint) must not back multiple semantic link types, enforce that exclusivity at the datastore layer, not only with application-side prechecks.
@@ -156,6 +157,8 @@ If sub-agents are unavailable or not permitted, state that constraint and contin
 7. External Feedback Reconciliation
 When auditing an active PR or change with bot/human reviewer feedback:
 - Fetch the latest review threads/comments and evaluate them against the current head, not stale line numbers or prior commit state.
+- Re-open original inline review threads after bot summaries. A bot saying a human concern is fixed is not enough; verify the original thread against current head and either reply with evidence, mark it stale/false-positive with a reason, or keep it in the open action list.
+- Separate current-head status from superseded workflow runs. If current-head CI is pending behind an older same-PR run, inspect the old run before canceling; cancel only obsolete blockers that are not needed as evidence.
 - Classify each item as actionable defect, worthwhile hygiene, false positive, stale/already fixed, or out of scope; only fix or report items with concrete evidence.
 - For each actionable item, extract the underlying invariant and add the narrowest regression check that proves the exact failure mode cannot recur.
 - Treat permissive fallback predicates in destructive automation as suspect: if the fallback is effectively dead or weaker than the primary provenance check, remove it or document and test why it is safe.
@@ -219,6 +222,9 @@ Enforce these requirements:
 - Verify external automation cleanup provenance: delete/cleanup jobs should correlate records to the intended run or owner with exact, boundary-safe identifiers and should include regression coverage for prefix/collision cases.
 - Verify canceled-run external state integrity: if an automation can be canceled after creating external state, a later independent cleanup path or creation-prevention strategy must cover it.
 - Verify review-feedback convergence: late bot/human audit comments should be triaged against the current head and converted into invariants plus focused tests when actionable.
+- Verify original-thread closure: when a bot summarizes human review feedback as fixed, inspect the original inline thread/comment against current head and close it with evidence or an explicit stale/false-positive disposition.
+- Verify current-head CI evidence: required checks should be tied to the latest head SHA; queued or pending runs caused by superseded same-PR workflows should be classified separately from code failures.
+- Verify sentinel-preservation caps: bounded context, prompt, attribution, and notification pipelines should regression-test time/window, pagination/page, count, and char/byte limits independently when a triggering record or root anchor must survive.
 - Verify producer/consumer scheduling for artifact promotion: the consumer's wait/poll window must be realistic relative to the producer's full critical path, including cache misses, upload latency, and job queueing.
 - Verify rerun identity for CI artifacts and caches: names keyed by run attempt, shard id, branch, or matrix cell must still work for partial reruns and "rerun failed jobs" paths, or intentionally fall back with clear telemetry.
 - Verify fast-path/fallback output parity: promoted/restored artifacts and locally rebuilt artifacts should use the same compiler/runtime/build command and required entrypoint checks unless divergence is explicitly tested.

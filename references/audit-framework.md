@@ -63,6 +63,7 @@ Minimum invariants to include in every audit:
 - Time semantics invariants (timezone/DST/window boundaries and expiry logic are deterministic).
 - Resource-boundedness invariants (pagination, fan-out, in-memory maps, queue growth, and retries have bounds/backpressure).
 - Nested-helper boundedness invariants (direct provider-client loops and per-record fanout helpers must not bypass central pagination, retry, timeout, or cap guards).
+- Layered-boundary preservation invariants (sentinel records such as triggering events, roots, idempotency markers, provenance rows, and user-visible anchors survive each independent limiter: time windows, provider pagination/page caps, local count caps, char/byte caps, and formatting/truncation passes).
 - External dependency degradation invariants (timeouts, retries, fallback, and partial-failure behavior are explicit and testable).
 - Lazy initialization invariants (memoized dynamic imports, provider clients, auth material, and singleton startup promises retry after rejection or intentionally enter a surfaced degraded state instead of poisoning the process until restart; direct equivalent import/client call sites should not bypass a central retryable loader without an adjacent justification).
 - External lifecycle freshness invariants (webhook/lifecycle handlers that reuse earlier provider/auth reads still have a write-adjacent freshness check or datastore CAS for external token/install generations not durably fenced in local state).
@@ -209,6 +210,8 @@ Check for:
 - Manual debug secrecy: docs and runbooks that query credential models must redact top-level and nested token/refresh-token fields, not only the most obvious access token.
 - Remediation traceability: findings should map to an implementation checklist/spec with closure status so handoffs can continue without re-auditing from scratch.
 - Review-feedback hygiene: bot/human review comments should be evaluated against the current head, classified as actionable/stale/false-positive/hygiene, and converted into invariants plus focused checks when real.
+- Original-thread closure: when bot summaries claim reviewer feedback is fixed, verify the original inline thread/comment against the current head and leave an evidence reply or explicit stale/false-positive disposition.
+- Current-head CI evidence: distinguish current-head required checks from superseded workflow runs; if current-head CI is pending behind an older run, inspect and cancel only obsolete blockers.
 - Change safety rails: feature flags/migrations/config toggles should include rollback and compatibility strategy.
 - Release tooling trust parity: scripts used on signing/notarization/release machines should resolve helper binaries from trusted explicit paths, not from `PATH` or broad workspace / DerivedData searches.
 - Preview/export source-of-truth parity: exported output should render from current authoritative settings or state, not from stale async preview caches.
@@ -218,6 +221,7 @@ Check for:
 Check for:
 - Rare-state transitions and multi-step flow interactions that break invariants.
 - Time boundaries, timezone drift, retries, duplicate events, and out-of-order processing.
+- Layered cap edge cases: bounded context, prompt, attribution, and notification pipelines that preserve a triggering/root record should test each independent limiter separately, including time windows, provider pagination, local count caps, and char/byte truncation.
 - Derived delivery metrics under pathological windows: all failures, no successes, empty windows, capped samples, duplicate score inputs, date-only backfills, and fallback recovery signals should have focused tests before dashboards are trusted.
 - Provider no-data windows are their own edge case: "no datapoint" should not become 0, -100%, or a healthy zero-denominator rate unless that is the explicitly tested product meaning. Follow the state into every operator-facing renderer, highlight selector, notification payload, monitor, dashboard tile, and score formula because false zeroes often reappear after the data-access layer was fixed. Also distinguish a missing prior baseline from a previous value of zero; zero-to-bad transitions often need stronger treatment than ordinary percentage deltas can express.
 - Recovery and duration metrics should be audited against their lifecycle semantics. A rollback or force-deploy event can confirm a change failure, but its own start/finish timestamps measure recovery-action duration, not time-to-recovery, unless the code joins it to the original failure's detection/start time.
