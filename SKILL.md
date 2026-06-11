@@ -156,11 +156,13 @@ If sub-agents are unavailable or not permitted, state that constraint and contin
 
 7. External Feedback Reconciliation
 When auditing an active PR or change with bot/human reviewer feedback:
-- Fetch the latest review threads/comments and evaluate them against the current head, not stale line numbers or prior commit state.
+- Fetch the latest review threads/comments through the platform's thread-aware API, including unresolved/outdated state and pagination; summaries, issue comments, review decisions, and bot recaps are not exhaustive.
+- Evaluate each thread against the current head, not stale line numbers or prior commit state.
 - Re-open original inline review threads after bot summaries. A bot saying a human concern is fixed is not enough; verify the original thread against current head and either reply with evidence, mark it stale/false-positive with a reason, or keep it in the open action list.
 - Separate current-head status from superseded workflow runs. If current-head CI is pending behind an older same-PR run, inspect the old run before canceling; cancel only obsolete blockers that are not needed as evidence.
 - Classify each item as actionable defect, worthwhile hygiene, false positive, stale/already fixed, or out of scope; only fix or report items with concrete evidence.
 - For each actionable item, extract the underlying invariant and add the narrowest regression check that proves the exact failure mode cannot recur.
+- If feedback questions why a compensating/helper path is needed, trace the shared lifecycle and ownership path first; tests that mock that central path prove only fallback behavior, not that the helper belongs at the caller-specific layer.
 - Treat permissive fallback predicates in destructive automation as suspect: if the fallback is effectively dead or weaker than the primary provenance check, remove it or document and test why it is safe.
 - After fixes, rerun focused verification and re-check whether late review feedback introduced new meaningful findings before finalizing.
 
@@ -221,7 +223,9 @@ Enforce these requirements:
 - Verify integration-test env parity: when the app under test runs in a separate process, env mutations in the test runner after process spawn do not affect server behavior; configure env before spawn or move env-sensitive checks to unit-level coverage.
 - Verify external automation cleanup provenance: delete/cleanup jobs should correlate records to the intended run or owner with exact, boundary-safe identifiers and should include regression coverage for prefix/collision cases.
 - Verify canceled-run external state integrity: if an automation can be canceled after creating external state, a later independent cleanup path or creation-prevention strategy must cover it.
+- Verify compensating-helper ownership: before accepting caller-specific cleanup/recovery code, prove the shared lifecycle path cannot or should not own the invariant, and include at least one test that exercises the central path without mocking it.
 - Verify review-feedback convergence: late bot/human audit comments should be triaged against the current head and converted into invariants plus focused tests when actionable.
+- Verify review ingestion completeness: inline threads, flat PR comments, review bodies, and late comments added during the turn should all be collected before declaring feedback handled.
 - Verify original-thread closure: when a bot summarizes human review feedback as fixed, inspect the original inline thread/comment against current head and close it with evidence or an explicit stale/false-positive disposition.
 - Verify current-head CI evidence: required checks should be tied to the latest head SHA; queued or pending runs caused by superseded same-PR workflows should be classified separately from code failures.
 - Verify sentinel-preservation caps: bounded context, prompt, attribution, and notification pipelines should regression-test time/window, pagination/page, count, and char/byte limits independently when a triggering record or root anchor must survive.
