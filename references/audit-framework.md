@@ -1,6 +1,8 @@
 # Audit Framework
 
-Use this file as the operating checklist and output schema for the `audit-code` skill.
+Use this file for the shared severity, evidence, and report contracts. Technical lists are a
+catalog: select entries for boundaries present in the mission. They do not require every domain
+check, additional agents, or extra review rounds. [SKILL.md](../SKILL.md) owns the workflow.
 
 ## Severity Rubric
 
@@ -18,6 +20,7 @@ Use this structure for every finding:
 - Title: One-line defect statement.
 - Severity: `Critical | High | Medium | Low`.
 - Confidence: `High | Medium | Low`.
+- Scope disposition: mission blocker, patch regression, mandatory safety, follow-up, or non-finding.
 - Impact: Business/user/system impact in plain language.
 - Evidence: File path + line reference + behavior summary.
 - Trigger Conditions: Inputs, load profiles, user flows, or race conditions required.
@@ -28,17 +31,24 @@ Use this structure for every finding:
 
 ## Invariant Coverage Matrix (Required)
 
-Build this before role pass 1, then reuse it in pass 2.
+Build this before review and update it during targeted re-review.
 When prior audits, third-party reviewers, or later fresh-eyes passes produced findings, include a "missed invariant" row for each non-duplicate issue so future passes check the generalized rule rather than the incident narrative.
 
-For each invariant, list all mutating entry points (routes, webhooks, workers, scripts) and verify parity:
+For each invariant, list all affected entry points, including reads and previews, and verify parity:
 - Invariant: what must always remain true.
 - Entry Points: every code path that can violate it.
 - Guard Type: transactionality, conflict checks, auth checks, validation, media-type policy.
 - Gap: missing or inconsistent enforcement.
 
-Minimum invariants to include in every audit:
+Choose relevant invariants from this catalog and add any missing ones derived from the actual
+causal paths. Do not copy the whole catalog into every audit. Apply the
+[decision and test proof](../SKILL.md#decision-and-test-proof) checks where a derived value controls
+the behavior under review.
+
 - Data integrity invariants (linked writes remain atomic/consistent across stores and async boundaries).
+- Shared-field mutation ownership: when a semantic link changes shared fields, retain which changes it owns and refresh the saved previous values if it is relinked to a recreated record.
+- Deferred attachment: when work can exist before its external identifier or transaction, attach/remap paths must preserve the create path's validation and policy across API and UI.
+- In-flight compatibility: preserve queued handoff schemas and routing, or reconstruct compatible routing before consuming one-shot state.
 - Access-control and scope isolation invariants (authz checks and tenant/workspace/account boundaries are enforced on every read/write path).
 - Entitlement and policy invariants (plan/tier/feature flags and expensive-operation rights are enforced across API/UI/webhook/job paths, with revalidation before queued execution).
 - Identity lifecycle invariants (disable/revoke/role changes take effect across active sessions/tokens/keys).
@@ -213,9 +223,7 @@ Check for:
 - Contract-generation robustness: route/spec generation should be resilient to multiline/decorated declarations and protected by freshness checks that fail on omissions.
 - Manual debug secrecy: docs and runbooks that query credential models must redact top-level and nested token/refresh-token fields, not only the most obvious access token.
 - Remediation traceability: findings should map to an implementation checklist/spec with closure status so handoffs can continue without re-auditing from scratch.
-- Review-feedback hygiene: bot/human review comments should be evaluated against the current head, classified as actionable/stale/false-positive/hygiene, and converted into invariants plus focused checks when real.
-- Original-thread closure: when bot summaries claim reviewer feedback is fixed, verify the original inline thread/comment against the current head and leave an evidence reply or explicit stale/false-positive disposition.
-- Current-head CI evidence: distinguish current-head required checks from superseded workflow runs; if current-head CI is pending behind an older run, inspect and cancel only obsolete blockers.
+- Active review and CI evidence: follow [the shared PR workflow](../SKILL.md#active-prs-and-external-feedback) for original comments, exact-run validation, closure, and miss analysis.
 - Change safety rails: feature flags/migrations/config toggles should include rollback and compatibility strategy.
 - Release tooling trust parity: scripts used on signing/notarization/release machines should resolve helper binaries from trusted explicit paths, not from `PATH` or broad workspace / DerivedData searches.
 - Preview/export source-of-truth parity: exported output should render from current authoritative settings or state, not from stale async preview caches.
@@ -251,27 +259,20 @@ Check for:
 - Global-trigger serialization: repeated hotkeys, auto-repeat, re-entrant callbacks, or duplicate monitors must not overlap privileged flows or create window/process storms.
 - No-op edit/export behavior: if product semantics allow “open then save unchanged”, verify unchanged editor sessions still export successfully.
 
-## Two-Pass Execution Rule
-
-1. Complete pass 1 for Security, Performance, UX, DX, then Edge.
-2. Run tie-breaker review to reconcile conflicts.
-3. Re-run Security/Performance/UX/DX using edge findings as new attack/load/flow assumptions.
-4. Finish with Edge final pass to validate residual risk after proposed mitigations.
-5. Produce one merged final report from the tie-breaker lead.
-
 ## Final Report Template
 
-Use this exact section order:
+Use this order, omitting empty sections and repeated summaries:
 
-1. Findings (sorted by severity, blast radius, exploitability)
+1. Findings (sorted by severity, blast radius, exploitability; include scope disposition)
 2. Open Questions / Assumptions
-3. Remediation Plan (Now / Next / Later)
-4. Verification Plan
-5. Executive Summary
+3. Remediation Status (fixed, unresolved, or follow-up; do not present a proposal as an applied fix)
+4. Verification (checks actually run and their results, then remaining proof or blockers)
 
 ## Runtime-Agnostic Edge Sweep
 
-Run this sweep for every audit, regardless of stack:
+These prompts span stacks, but are conditional on the affected boundary. For example, OAuth,
+deployment, billing, and desktop checks do not apply merely because an audit is running. Use
+relevant entries to challenge the causal-path matrix, not as a second mandatory full checklist.
 - Partial update vs full replace semantics: verify cross-field invariants on resulting state, not just provided keys.
 - Null/empty/zero/missing differentiation: verify defaults and validations do not collapse distinct states.
 - Stable ordering and pagination: verify deterministic sort keys, cursor shape validation, and no duplicate/skip drift under writes.
@@ -335,8 +336,6 @@ Run this sweep for every audit, regardless of stack:
 - Optional speedup failure policy: verify best-effort speedups consistently fail open to the baseline, while deployability/safety gates fail closed; do not let diagnostic/cleanup/report steps invert that policy.
 - Schema-backed secret optionality: verify missing env/secret checks classify required, optional, defaulted, and deprecated keys from the runtime schema rather than only rendered manifests.
 - Shared test-state crash isolation: verify reused test databases/caches/workers/ports have setup-time cleanup or generation tokens so a killed process cannot contaminate the next test file or shard.
-- Active-review convergence: when auditing a PR with bot/human feedback, verify latest comments against the current head and treat actionable comments as new evidence that must either be fixed or explicitly dispositioned.
-- External-review miss analysis: when a third-party reviewer finds an issue the audit missed, classify whether the miss came from absent invariant coverage, insufficient evidence gathering, stale scope, weak role prompting, missing runtime verification, or missing regression tests.
 
 ## Runtime Module: macOS Desktop Utility
 

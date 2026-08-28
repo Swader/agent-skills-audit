@@ -26,6 +26,9 @@ For each external finding:
 2. Extract the generalized invariant the earlier audit should have checked.
 3. Identify the miss source:
    - absent invariant coverage
+   - collapsed decision values mistaken for equivalent authority or completed work
+   - a fixture that did not reach the claimed scope or execution path
+   - reviewers sharing the same unproved assumption
    - weak role prompt
    - stale scope or stale line references
    - missing file/runtime evidence
@@ -33,6 +36,8 @@ For each external finding:
    - missing regression test
    - cross-domain interaction not represented in the role stack
 4. Propose the narrowest skill/checklist update that would have caught it earlier.
+   Check whether existing guidance already covers the invariant before adding another rule. Prefer
+   a controlled counterexample that changes source or scope while keeping the final value unchanged.
 5. Propose the focused regression check or runtime probe that proves the failure mode.
 6. Mark whether the lesson belongs in `audit-code/SKILL.md`, `audit-code/references/audit-framework.md`, a repo-local skill, global memory, or only the current report.
 
@@ -48,4 +53,5 @@ Return:
 - Regression Check: focused test/probe.
 - Confidence: high, medium, or low.
 
-Keep the report compact. Do not propose broad checklist bloat when a targeted invariant or role prompt change is enough.
+Keep the report compact. Proposing a skill or memory update does not authorize applying it.
+Do not propose broad checklist bloat when a targeted invariant or role prompt change is enough.

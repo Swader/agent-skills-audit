@@ -1,384 +1,144 @@
 ---
 name: audit-code
-description: Run a scope-bounded, multidisciplinary code audit led by a tie-breaker lead, combining security, performance, UX, DX, and edge-case analysis into one prioritized report with concrete fixes. When sub-agents are available, use one fresh-eyes pass and one targeted re-review of admitted fixes. Use when the user asks to audit code, perform a deep review, stress-test a codebase, or produce a risk-ranked remediation plan across backend, frontend, APIs, infra scripts, and product flows. Keep the audit stack-agnostic first, then add runtime-specific checks as an overlay.
+description: Audit code for concrete correctness, security, performance, UX, and maintainability risks within an agreed scope. Use for code audits, PR feedback, or adversarial review. Produce evidence-backed findings, focused verification, and a bounded independent review when permitted.
 ---
 
 # Audit Code
 
-## Overview
+Find concrete failures in the requested change and its affected paths. Use security, performance,
+UX, DX, and edge cases as review lenses, not a requirement to launch five agents or repeat the
+entire audit. Prefer a few demonstrated findings over a long list of hypothetical improvements.
 
-Run an expert-panel audit with strict sequencing and one unified output document.
-Produce findings first, sorted by severity, with file references, exploit/perf/flow impact, and actionable fixes.
-For local desktop utilities, treat privileged OS integration, local privacy leakage, same-user abuse, and release-toolchain trust as first-class risk areas rather than defaulting to server-style findings.
-For privacy-sensitive desktop flows, treat the global pasteboard as a shared side channel, not a harmless transport layer; audit clipboard managers, same-user listeners, and restoration races whenever the app touches it.
-For CI/CD, release, and infrastructure automation, treat external records and side effects (deployments, statuses, tags, releases, caches, environments, cloud objects) as durable state; audit creation, cancellation, cleanup, and provenance matching end-to-end.
-For workflow audits, inspect actual shell semantics rather than intent: process substitution, command substitution, redirections, grouped commands, `set -e`, and `pipefail` can mask producer failures. Model side-effect boundaries explicitly, especially "rollout/external write succeeded, later integrity gate failed" states, and verify downstream continuation, compensation, and alert copy for that split-brain outcome. A live rollout followed by an artifact-integrity failure is not the same outcome as a rollout failure; telemetry and notifications must preserve that distinction.
-For shared-app, webhook, or chat-provider ingress, audit target/resource identity separately from actor identity. A valid linked sender is not proof the event was addressed to the bot/app; provider channel types such as DM/IM can still represent human-to-human surfaces. Require negative tests with the same linked actor in an unintended external channel/resource, including first-touch/onboarding paths, before accepting assistant dispatch or private replies.
-For provider OAuth/callback errors, verify the provider error code's semantic cardinality before mapping it to product copy, durable state, or analytics. Overloaded codes such as "denied" may mean user cancellation, admin policy, scope refusal, or provider failure; unless the callback includes cause-specific evidence, user-facing copy and stored reasons should cover all realistic meanings or use a neutral reason.
-For client-side transition bridges such as redirect query params, localStorage, and sessionStorage, treat the payload as advisory. Before it advances a flow, shows provider-cause copy, or emits attribution analytics, prove it is scoped to the current identity/workspace and either revalidated against signed/server-persisted state or limited to display-only behavior.
-For optimization work, audit both sides of every guardrail: unsafe/ambiguous inputs must fall back to the safe baseline, and representative safe inputs must still reach the optimized path after all new probes, parsers, and safety checks run. A green fallback can hide a neutered optimization.
-For observability and delivery-metrics work, audit metric truthfulness under catastrophic and empty windows, date-only timezone boundaries, provider retry/idempotency semantics, pagination caps, classifier false positives, telemetry wire-format compatibility, and secret-bearing free-form text before treating dashboards or digests as accurate. Distinguish "provider returned no datapoint" from a real zero value; missing current data should produce an explicit no-data/staleness signal or omitted delta, not a synthetic 0 or -100% trend. Trace that no-data state through downstream renderers, highlights, scores, Slack/email copy, monitors, dashboards, and exported JSON so the final operator surface does not reintroduce a false zero after the collector/query layer handled it correctly. Existing diagnostic tags should not silently change type or allowed values; preserve the old field, add a versioned/status companion, or update every known consumer. Every emitted diagnostic tag or guardrail state should have an explicit consumer (dashboard, monitor, digest, event search, or documented artifact) or it is only latent metadata, not operational visibility.
-For primary-source/fallback observability readbacks, verify malformed primary records degrade per item, partial primary results are unioned with fallback instead of suppressing it, fallback identity is complete and provenance-scoped, fallback timestamps are unit/window-valid, and high-cardinality marker emission is limited to the exact consumer scope that queries it.
-When tightening a readback consumer, parser, or validator, audit the exact producer payload that feeds it. Regression tests must round-trip real producer output, recorded provider responses, or generated fixtures through the stricter consumer; hand-built mocks that include idealized fields are not enough because they can hide missing tags, renamed fields, provider field placement, or aggregation-key-versus-tag drift.
-When adding backward-compatible defaults for legacy provider records, distinguish absent fields from present-but-invalid fields. A legacy default should not launder malformed identity, timestamps, or status values into valid readback rows.
-For duration and recovery metrics, prove the timestamp pair measures the named interval. A fallback recovery event's runtime is not MTTR unless it is joined to the failure start/detection time; if the source does not provide the full lifecycle, keep it as a correlated failure/CFR signal or separate distribution rather than mixing it into headline recovery-time metrics.
-When a metric delta is null, identify why: "no prior baseline" and "previous value was zero" are different states. A zero-to-positive regression for a lower-is-better metric should be scored and alerted as a regression, not treated as a learning-baseline partial-credit case.
-For scheduled collectors and digests, model provider silence, empty discovery results, and delayed cron delivery as separate states from business failures. A scheduled job that treats no-data as a hard mismatch can fail-loop and contaminate the dashboard it is meant to protect.
-For deployment and verification workflows, compare the exact workload/resource selectors used by rollout, verification, telemetry, and cleanup steps. Equivalent phases must observe the same resource set, or a missing label/filter can make rollout succeed while verification sees no data and emits fallback telemetry. When fallback/no-data telemetry is emitted to preserve observability, audit every headline aggregate and digest query so fallback fan-out is either intentionally counted, collapsed, or explicitly excluded.
-For partial external submissions, audit the human success logs as carefully as the API calls. If a multi-step submission can partially succeed under best-effort mode, success messages must be gated per side effect so operators never see "submitted" for a step that failed. Alert and monitor copy must also match the actual schedule/query semantics; do not mention business-hours behavior unless the monitor or scheduler enforces it.
-For validation split across workflow YAML, shell, and runtime code, compare the exact sentinel/placeholder allowlists. A reason/input that passes the early gate but fails later under `continue-on-error` can silently drop telemetry after the privileged side effect already happened.
-For duplicated release workflows, compare every side-effect boundary across variants, not only the workflow named in the current finding. A marker, output, `if:` condition, fallback emit, or post-rollout continuation added to one deploy path can leave a force/manual/redeploy sibling with silent telemetry gaps.
-When a workflow fix claims an event will now emit, trace through the runtime command it invokes. YAML markers and `if:` gates can be correct while the CLI/library still refuses the emission on its own validation path; comments must match both orchestration and runtime behavior.
-For resumable replay/backfill/idempotency state, audit each status as a state machine. A pre-submit `started` marker must not be treated as a durable `submitted` marker on the next run, and readers should use the latest status per key rather than "key was ever seen."
-For classifier-derived tags and risk labels, test both positive cases and realistic false positives. Overloaded tokens such as `config`, `auth`, or `deploy` may mean runtime risk in one path and harmless tooling metadata in files like `vite.config.ts` or `eslint.config.ts`.
-When the product edits OS-owned or user-owned config artifacts such as launchd plists, crontabs, `.env` files, or other flat files, explicitly audit:
-- identifier-to-path derivation and traversal resistance
-- hidden-artifact creation via dot-prefixed or otherwise scanner-skipped names
-- read-only capability parity between UI and lower layers
-- split-brain state between persisted config and runtime override systems
-- malformed-config partial-failure behavior during scans
-- CLI probe failure handling for runtime-state reads
-- stale-index versus fingerprint-based conflict safety for line-oriented edits
+## Scope and authority
 
-Load `references/audit-framework.md` before starting the analysis.
-When a third-party reviewer, bot, human reviewer, or later fresh-eyes pass finds issues after this skill already ran, treat that as audit feedback to improve shift-left coverage. Reconcile the feedback, extract the missed invariant, and update the relevant audit checklist or prompt guidance when the lesson is reusable.
+Before reviewing, establish a compact mission contract:
 
-## Scope Governor
+- Demonstrated failure or requested outcome, acceptance criteria, and affected paths.
+- Explicit non-goals and whether the task permits edits or is review/plan only.
+- Expected footprint, runtime context, and evidence that requires external access.
 
-This skill is self-contained. Before reviewing a change, capture its mission contract:
+Classify each concern:
 
-- Demonstrated failure or requested outcome.
-- Acceptance criteria.
-- Explicit non-goals.
-- Expected footprint: likely files, approximate changed lines, and planned new concepts.
+1. **Mission blocker:** an acceptance criterion is unmet.
+2. **Patch regression:** this change introduces a concrete failure.
+3. **Mandatory safety:** a concrete security, authorization, privacy, or data-loss risk.
+4. **Follow-up:** worthwhile but outside the current mission.
+5. **Non-finding:** unsupported, duplicate, stale, or pre-existing without an in-scope consequence.
 
-Classify every finding as one of:
+Only the first three can block the patch. A finding does not itself authorize edits, external
+writes, publishing, workflow cancellation, or skill/memory changes. Respect the user's approval
+boundary; plan-only work stops at the plan. Explain any necessary scope expansion before acting.
 
-1. **Mission blocker**: an acceptance criterion remains unmet.
-2. **Patch regression**: the reviewed change creates a concrete new failure.
-3. **Mandatory safety**: a concrete security, authorization, privacy, or data-loss risk must be fixed before shipping.
-4. **Follow-up**: worthwhile but outside the current mission.
-5. **Non-finding**: speculative, duplicate, stale, pre-existing, or unsupported.
+For a hotfix, reassess near five files, 150 non-generated changed lines, twice the expected
+footprint, or an unplanned schema, queue, scheduler, protocol, or recovery mechanism. These are
+tripwires, not universal size limits. Look for a smaller design before expanding the mission.
+Do not demand new restrictions or infrastructure merely to satisfy a speculative scenario.
 
-Only the first three categories may block or expand the current patch. Preserve follow-ups in the report without converting them into implementation work unless the user explicitly broadens scope.
+## Read only the applicable guidance
 
-Trigger a scope stop when a hotfix approaches five files or 150 non-generated changed lines, exceeds roughly twice its expected footprint, or introduces an unplanned schema, durable queue/state, scheduler, state machine, protocol, cross-process recovery mechanism, or generic framework. Recommend returning to the last coherent minimal patch and getting explicit approval before broadening. These are review tripwires, not universal hard limits.
+Use [audit-framework.md](references/audit-framework.md) for the severity rubric, finding schema,
+coverage matrix, and report template. Its technical lists are a catalog: select checks for
+boundaries present in the mission, rather than loading or applying every domain to every audit.
+Keep the workflow here authoritative; reference checklists do not add extra review rounds.
 
-## Required Inputs
+| When the mission touches | Read or search |
+| --- | --- |
+| Access, provider callbacks, OAuth, data integrity, metrics, shared state | Relevant invariant, role, and edge sections in [audit-framework.md](references/audit-framework.md); search the affected boundary, such as `OAuth`, `no-data`, or `mutation` |
+| Queues, claims, retries, locks | [Queue overlay](references/domain-overlays.md#queues-idempotency-and-locks) |
+| CI, deployment, artifacts, test harnesses | [CI overlay](references/domain-overlays.md#cicd-test-infrastructure-and-artifact-promotion) |
+| SSH bootstrap and worker trust | [SSH overlay](references/domain-overlays.md#ssh-bootstrap-and-remote-worker-trust) |
+| macOS packaging, signing, distribution | [Release overlay](references/domain-overlays.md#macos-release-closure) and the framework's macOS module |
+| Desktop preview, export, persisted editor state | [Editor overlay](references/domain-overlays.md#swiftuiappkit-preview-export-and-editor-freshness) |
+| Imports, parsing, financial reconciliation | [Import overlay](references/domain-overlays.md#parser-import-and-personal-finance-reconciliation) |
+| Forms, dashboards, list/detail views | [UI overlay](references/domain-overlays.md#ui-state-persistence-and-detail-loading) |
+| Bun and SQLite | The framework's Bun + SQLite module |
+| An external reviewer found a miss | [Gap reducer](agents/audit-gap-reducer.md), when a structured miss analysis would help |
 
-Collect or infer the following:
-- Audit scope: paths, modules, PR diff, or whole repository.
-- Product context: PRD/spec/user stories, trust boundaries, and critical business flows.
-- Runtime context: deployment model, queue/cron/background jobs, traffic profile, data sensitivity, and abuse assumptions.
-- Constraints: timeline, acceptable risk, and preferred remediation style.
+An unmatched stack is not a blocker: derive its relevant invariants from the code and state
+uncertain runtime assumptions. Companion skills are optional; do not add installation promotions
+to every report or require unrelated tools to complete the audit.
 
-If product context is missing, state assumptions explicitly and continue.
+## Decision and test proof
 
-## Team Roles
+When a changed branch depends on a derived value such as `allowed`, `success`, `ready`, or `found`:
 
-Use exactly these roles:
-- Security expert
-- Performance expert
-- UX expert
-- DX expert
-- Edge case master
-- Tie-breaker team lead
+1. **Trace its producers.** Enumerate the materially different ways that value can arise:
+   explicit choice, default, inherited value, fallback, synthetic promotion, bypass, or cache.
+   Trace the consumer too. The same value need not carry the same authority or prove the same work.
+2. **Verify the selected scope.** Establish the actor, resource, account/tenant, policy scope,
+   precedence, and freshness that actually apply. A setting existing somewhere is not proof that
+   it controls this decision. Reuse the canonical resolver; do not invent a parallel policy path.
+3. **Try a controlled counterexample.** Keep the final value the same and change its source or
+   scope. Ask whether the downstream behavior should remain the same under the actual contract.
+   For example, a default allow is not automatically consent, and a successful skipped job is not
+   proof that validation ran. Distinct sources need not be treated differently unless the contract
+   requires it; this is a proof obligation, not a mandate to add flags or restrictions.
+4. **Prove the test path.** Inspect the fixture's effective configuration, identity, scope, and
+   prerequisites through the real resolver or an observable boundary. A test name or setup comment
+   is not evidence. Mocks must not replace the decision being tested. Include a useful positive
+   case so an always-deny, always-prompt, or fallback-only implementation cannot pass unnoticed.
 
-The tie-breaker lead resolves conflicts, prioritizes issues, and produces the final single report.
+Use the smallest counterexample that can falsify the claim, not a speculative Cartesian test
+matrix. A before/after failure must occur for the claimed reason, not a missing fixture dependency.
+If a fixture changes scope or reachability, re-establish the evidence; do not carry forward the
+old test's proof claim. Distinguish source inspection, focused checks, and actual runtime proof.
 
-## Workflow
+## Audit workflow
 
-Follow this sequence every time:
+1. **Map the causal paths.** Read the code and product contract. Identify producers, resolvers,
+   consumers, mutations, and affected sibling entry points. Build a compact matrix of critical
+   invariants, paths, evidence, and gaps using the framework. Include relevant read/preview paths,
+   not only mutating endpoints. A prior missed invariant belongs in this matrix.
+2. **Review from each applicable lens.** Check security, performance, UX, DX, and edge cases against
+   that matrix. Trace failures through the real execution path, including wrappers, defaults,
+   retries, and provider boundaries. Examine shared lifecycle ownership before accepting a local
+   compensation helper; do not mock the canonical path away to justify the helper.
+3. **Reconcile findings.** Require a trigger, code/runtime evidence, impact, confidence, scope
+   disposition, and smallest useful fix. Resolve disagreement through evidence, not reviewer votes.
+   An implementation being stricter than a spec is not automatically correct: reconcile the
+   product/security requirement and document any intentional difference.
+4. **Verify and get independent review.** Run the smallest relevant check when cheap and permitted.
+   Use one independent reviewer when delegation is available and allowed; add specialists only for
+   a concrete risk or explicit request. Provide the mission, non-goals, raw artifacts, and current
+   diff without your desired answer or previous verdict. Ask it to challenge a consequential
+   assumption. If delegation is unavailable, perform and disclose a main-thread review instead.
+5. **Fix only authorized, admitted findings.** For report-only work, report them without editing.
+   After a fix, rerun the affected check and one targeted review of the changed causal path. Broaden
+   only when the fix changes the mission or exposes another concrete affected path. Do not restart
+   every specialist or rerun unrelated suites after each correction.
+6. **Close with evidence.** Do a final main-thread pass against acceptance criteria and current
+   feedback. Stop when no admitted in-scope finding remains, or state the exact blocker. Use the
+   framework's single report template. Separate verified results, unresolved findings, follow-ups,
+   and environment requirements that were not checked. Do not claim completion from consensus,
+   a submitted command, an audit alone, or a queued/skipped check.
 
-1. Build Context
-Read code + product flows. Identify assets, entry points, high-risk operations, privileged actions, external dependencies, and "failure hurts" journeys.
-For products that replace native OS behavior, explicitly map the prerequisites to intercept the native action versus the prerequisites to complete the replacement flow.
+## Active PRs and external feedback
 
-2. Build Invariant Coverage Matrix
-Before specialist pass 1, map critical invariants to every mutating path (HTTP routes, webhooks, async jobs, scripts):
-- Data-integrity invariants: linked records, transaction boundaries, and conflict handling must preserve consistency.
-- Access lifecycle invariants: permission changes (disable/revoke/role change) must take effect across active credentials and privileged actions.
-- Entitlement invariants: plan/tier/feature gates must be enforced on every trigger path (API/UI/webhook/job), and queued work must re-check entitlement at execution time.
-- Input/protocol invariants: validation, canonicalization, parser behavior, and payload size/media-type policy must be consistent across equivalent paths.
-- External event target invariants: provider callbacks must prove both the actor identity and the intended target/resource identity before dispatching work or sending replies. Test a valid linked actor speaking in an unintended provider channel/resource so sender-link checks cannot masquerade as recipient targeting.
-- Scoped parser invariants: lightweight parsers that extract values from config/source text must prove they read the intended scope, not the first matching token in the whole file. Tests should include realistic distracting earlier, later, and nested literals plus a smoke check against the real source-of-truth artifact when available.
-- Cross-layer validation invariants: workflow gates, shell preflights, CLI validators, and library/runtime validators must reject the same sentinel and placeholder values before privileged side effects; avoid parallel hard-coded lists unless tests prove parity.
-- Sentinel semantics invariants: special values (for example `0`, empty, `NULL`) must have one canonical meaning across UI/API/webhook/worker paths.
-- State-transition invariants: lifecycle transitions (active/archived/deleted/expired) must be explicit, legal, and consistently enforced.
-- Cross-trigger policy invariants: business rules (for example downgrade timing, reset authority, pause/resume criteria) must remain consistent across user actions, provider callbacks, and background workers.
-- Mutation outcome invariants: state-changing handlers must only signal success (UX/audit/events) after durable write success; persistence failures must be surfaced.
-- Write-freshness invariants: callback/verification paths must avoid stale full-record rewrites; use conditional field-scoped updates for concurrent edit safety.
-- Side-effect ownership invariants: if a semantic link mutates shared record fields (for example tax flags, reconciliation markers, or categorization), persist whether the link owns that mutation and refresh any stored "previous value" snapshot when relinking to a recreated backing record.
-- Deferred-attachment invariants: if the product allows creating semantic events before the final external identifier or bank transaction exists, equivalent attach/remap paths must exist across API and UI and must preserve create-path validation and policy checks.
-- Idempotency/order invariants: retries, duplicates, and out-of-order events must not corrupt state or duplicate side effects. Deferred handoff/onboarding payload schema changes must preserve in-flight records or infer legacy routing before consuming one-shot state.
-- Claim lifecycle invariants: claim/lease-based workers must persist attempts/status and release claim markers on every success and failure path.
-- Time-window invariants: timezone and boundary behavior (expiry, rollovers, DST) must be deterministic.
-- Resource-boundedness invariants: loops, fan-out, queues, and in-memory maps must have caps/backpressure/cleanup.
-- Nested-helper boundedness invariants: do not stop after finding one central pagination or retry helper with a cap; search for direct provider-client loops and per-record fanout helpers that bypass the central guard.
-- Layered-boundary preservation invariants: when a pipeline must preserve sentinel records such as triggering events, root records, idempotency markers, provenance rows, or user-visible anchors, test every independent limiter. Time windows, provider pagination/page caps, local count caps, character/byte caps, and final formatting/truncation passes can each drop a sentinel after an earlier layer preserved it.
-- Metric-truth invariants: rates and scores must use policy-correct denominators, count catastrophic windows honestly (for example all failures and no successes), avoid accidental double-counting across score pillars, and surface sampled/partial states when caps are hit.
-- No-data metric invariants: empty provider responses, missing series, and null datapoints are not equivalent to zero. Deltas, rates, health scores, generated highlights, and notification renderers need explicit missing-current-data handling so observability outages do not masquerade as real operational improvement, false critical regressions, or collapse.
-- Shared-identity exclusivity invariants: if one external/shared identifier (for example a bank transaction id, provider event id, or import fingerprint) must not back multiple semantic link types, enforce that exclusivity at the datastore layer, not only with application-side prechecks.
-- External dependency invariants: timeouts, partial failures, fallback behavior, stale-cache behavior, and explicit provider policy parameters must be intentional.
-- Lazy initialization invariants: memoized dynamic imports, provider clients, auth material, and singleton startup promises must not cache a rejected promise forever unless the product intentionally requires process restart; either retry after failure or expose a terminal degraded state. When a central lazy loader exists for retry/caching semantics, search for direct equivalent dynamic imports that bypass it and require either shared use of the loader or an adjacent justification comment.
-- External lifecycle freshness invariants: when optimizing duplicate provider/auth reads in webhook lifecycle handlers, preserve a write-adjacent freshness check or datastore CAS for every external generation not durably fenced in local state.
-- Provider retry/idempotency invariants: retry only transport/protocol failures that are safe to replay; ambiguous POST timeouts or 5xx responses require documented provider dedupe semantics or no automatic retry.
-- External-send metadata invariants: action/tool flags used for "side effects", "idempotent", "confirmation", or "safe retry" must match the real external behavior. Do not mark a real send, post, payment, invite, or provider write as side-effect-free just to avoid confirmation friction; use a separate explicit exemption for confirmation UX and keep retry semantics non-idempotent.
-- Bounded-scan retry invariants: if a webhook/provider handler hits a deterministic local scan cap, retrying the same event usually cannot make progress. Require a terminal ACK/degraded state with diagnostics, or a durable cursor/manual-repair path; do not throw and release the claim into an infinite provider retry loop, and do not fall through to duplicate work that the cap may have hidden.
-- Telemetry secrecy invariants: free-form titles, PR text, deploy reasons, incident summaries, and operator inputs must be sanitized on live emission paths, not only in dry-run renderers.
-- Observability invariants: high-risk state changes and failures must emit actionable, traceable signals with required schema fields (actor/target and before/after context where applicable).
-- Editable-surface invariants: fields exposed as editable in UI/API must be durably persisted or explicitly documented and enforced as immutable.
-- Deployment/automation invariants: deployment docs and release scripts must align with CI artifact strategy, branch policy, and path-specific ingress controls.
-- Automation provenance invariants: destructive cleanup of external records must identify ownership with stable provenance evidence and boundary-safe identifiers, not broad branch/SHA/environment/name filters.
-- Cancellation/stale-run invariants: external side effects created before skipped, failed, or canceled automation must be prevented up front or cleaned by an independent later path.
-- Workflow gate DAG invariants: a preflight, validation, approval, or integrity job only gates later work if all privileged/expensive/side-effect jobs have an explicit dependency and result guard for it. A red parallel job can still leave builds, cloud auth, deploys, or notifications running.
-- Effective secret/config invariants: validation jobs must use the same secret scope, alias precedence, environment binding, and blank-string handling as the jobs they protect; repo/org/environment secret timestamps and preferred aliases can invalidate clean local tests.
-- Fast-path/fallback parity invariants: optimized paths and fallback paths must produce behaviorally equivalent artifacts/state with the same compiler/runtime/toolchain, or the intentional divergence must be documented and tested.
-- Fast-path engagement invariants: guardrails, probes, and fallback reasons must be tested with representative eligible inputs so the intended optimization still engages; fail-safe fallback tests alone are insufficient.
-- Producer/consumer timing invariants: async producers and consumers must be checked as a DAG with realistic scheduling, queueing, and timeout windows; existence of a produced artifact is not enough if the consumer can start before it is available.
-- Retry/attempt identity invariants: reruns, partial reruns, workflow attempts, sharded retries, and manual restarts must resolve the same logical artifact/state when that is intended, and must not silently look for a different attempt-scoped name.
-- Schema-derived optionality invariants: config/secret/env validation must classify required versus optional/defaulted keys from the authoritative runtime schema, not only from declaration files or rendered templates.
-- Config authority invariants: repo/workspace-local config is untrusted for binding local secret env names, network destinations, clone remotes, or privileged local paths unless those values match user-controlled config or an explicit trust registry; queued/retry paths must revalidate the same trust boundary before outbound side effects.
-- Clean-runner env invariants: tests and dry-runs for CI/workflow code must model absent local env files and blank GitHub expression values separately from populated developer shells.
-- Live-scale command invariants: provider or cluster reads should be tested against realistic payload sizes and output-buffer limits, not only fixture shape, especially before post-emit verification steps.
-- Additive telemetry rerun invariants: if count/distribution metrics or other additive records can be emitted before a later failure, manual retry guidance, idempotency, and operator copy must account for duplicate or partial samples.
-- Shared test-state invariants: test speedups that reuse databases, caches, workspaces, workers, or ports must prove clean state on process crash, cancellation, retry, and cross-file reuse, not only on the happy-path teardown.
-Add domain-specific invariants discovered during context build; do not constrain to this list.
-Treat missing parity across equivalent paths as a finding candidate.
-Apply any relevant overlay in the Domain-Specific Audit Overlays section below before specialist pass 1; add overlay-specific invariants to the matrix instead of keeping them as separate notes.
+- Resolve the live PR head before collecting checks and reviews; pass that identity explicitly to
+  dependent readers. Collect independent evidence in parallel only after its shared inputs exist.
+  A cached summary is not a current-head lookup. Recheck the head before a completion or merge claim.
+- Read all pages of conversation comments, submitted review bodies, and inline threads, including
+  unresolved/outdated state and late feedback. Review summaries are not substitutes for the original
+  human comments. Verify each finding against the current code and record its disposition.
+- Match CI evidence to the head, actual run/attempt, and relevant jobs. Inspect failed-job logs before
+  assigning cause. A successful wrapper or skipped draft workflow does not prove the code was tested.
+  Separate superseded runs, queued jobs, infrastructure failures, and code failures. Inspect an older
+  blocking run before any authorized cancellation; do not cancel work just to make a status green.
+- Reply to or resolve only findings actually addressed, and only when authorized. Do not dismiss an
+  unresolved legitimate review to enable merging. If the head changes, revisit the affected evidence.
+- When an external finding exposes a miss, identify the missed invariant, evidence, assumption, and
+  minimal counterexample. Check whether existing guidance was absent, ambiguous, or simply not
+  followed. Propose the smallest reusable update; do not append the incident as another universal
+  rule or edit skills/memory without authorization.
 
-3. Pass 1 Specialist Reviews
-Run role-specific analysis in this order:
-- Security
-- Performance
-- UX
-- DX
-- Edge case master
-Capture findings using the schema in `references/audit-framework.md`.
+## Verification and reporting discipline
 
-4. Tie-Breaker Reconciliation
-Resolve disagreements:
-- Decide whether contested items are true issues.
-- Set severity and confidence.
-- Remove duplicates and merge overlapping findings.
+Require concrete evidence for findings and distinguish confirmed defects from uncertain risks.
+For admitted High/Critical findings, include a focused regression check or explain the verification
+blocker. Do not request broad testing merely because it is available. Ensure code, tests, docs, and
+claims agree with the actual contract, including the unchanged positive path.
 
-5. Cross-Review Pass 2
-After edge-case findings, rerun specialists:
-- Security/Performance/UX/DX reassess prior findings and new edge-triggered scenarios.
-- Edge case master performs a final pass on residual risk after proposed mitigations.
-
-6. Bounded Fresh-Eyes Review
-When sub-agent tooling is available and permitted by the active instructions/user request, use this bounded sequence before the final report:
-- Give the selected sub-agent(s) only the audit scope, relevant product assumptions, and current tree/diff. Ask for an independent "fresh eyes" audit using this skill's role stack and `references/audit-framework.md`; avoid leaking prior findings, suspected bugs, intended fixes, or conclusions unless needed to define scope.
-- Use one independent sub-agent by default. Add focused fan-out only for a concrete high-stakes boundary or explicit user request.
-- Classify every finding through the scope governor. A validated adjacent improvement is still a follow-up, not a blocker.
-- Fix admitted findings when code changes are in scope. For report-only work, report them without editing.
-- After fixes, run the narrowest relevant verification and one targeted re-review limited to those fixes and their immediate causal path.
-- Finish with one main-thread pass against the mission contract. Do not restart broad review unless the mission changed.
-- Stop when no mission blocker, patch regression, or mandatory safety finding remains. "No conceivable findings" is not the completion criterion.
-
-If sub-agents are unavailable or not permitted, state that constraint and continue with the main-thread audit workflow.
-
-7. External Feedback Reconciliation
-When auditing an active PR or change with bot/human reviewer feedback:
-- Fetch the latest review threads/comments through the platform's thread-aware API, including unresolved/outdated state and pagination; summaries, issue comments, review decisions, and bot recaps are not exhaustive.
-- Evaluate each thread against the current head, not stale line numbers or prior commit state.
-- Re-open original inline review threads after bot summaries. A bot saying a human concern is fixed is not enough; verify the original thread against current head and either reply with evidence, mark it stale/false-positive with a reason, or keep it in the open action list.
-- Separate current-head status from superseded workflow runs. If current-head CI is pending behind an older same-PR run, inspect the old run before canceling; cancel only obsolete blockers that are not needed as evidence.
-- Classify each item through the scope governor. Only mission blockers, patch regressions, and mandatory safety findings may block the patch; report worthwhile adjacent work as follow-up.
-- For each actionable item, extract the underlying invariant and add the narrowest regression check that proves the exact failure mode cannot recur.
-- If feedback questions why a compensating/helper path is needed, trace the shared lifecycle and ownership path first; tests that mock that central path prove only fallback behavior, not that the helper belongs at the caller-specific layer.
-- Treat permissive fallback predicates in destructive automation as suspect: if the fallback is effectively dead or weaker than the primary provenance check, remove it or document and test why it is safe.
-- After fixes, rerun focused verification and perform one targeted check of the addressed feedback before finalizing.
-
-When external feedback finds a meaningful issue that prior audit passes missed, also perform a miss analysis:
-- Missed invariant: the general rule the audit failed to check.
-- Missed evidence: file, runtime behavior, test, log, or reviewer context that should have been inspected.
-- Missed role: which role should have caught it and what prompt/checklist wording would have led there.
-- Missed verification: the focused test or probe that would have exposed it before review.
-- Scope disposition: whether this should update `SKILL.md`, `references/audit-framework.md`, a domain overlay, a repo-local skill, or only the current report.
-
-For reusable lessons, patch this skill or its reference checklist in the same task when allowed. Keep additions invariant-first and stack-agnostic unless the miss is clearly domain-specific.
-
-8. Final Report
-Publish one document from the tie-breaker lead with:
-- Findings first (ordered by severity, then blast radius, then exploitability).
-- Open questions/assumptions.
-- Remediation plan with priority, owner type, and verification tests.
-- Short executive summary at the end.
-
-## Quality Bar
-
-Enforce these requirements:
-- Use concrete evidence with file references and line numbers where available.
-- Include reproduction steps for security/performance/edge findings when feasible.
-- Prefer actionable fixes over abstract advice.
-- Separate confirmed defects from speculative risks.
-- Mark confidence for each finding.
-- Run a cross-route consistency sweep: equivalent endpoints/jobs must enforce equivalent invariants.
-- Run a required runtime-agnostic edge sweep using `references/audit-framework.md` (`Runtime-Agnostic Edge Sweep`).
-- Verify deprecation path integrity: explicit failure semantics, replacement guidance, and docs/spec/skill parity.
-- For fan-out integration endpoints, verify bounded concurrency and partial-failure behavior expectations.
-- Verify state-switch UX integrity for whichever context selector exists in the product (for example workspace/account/tenant/environment): changing it should refresh active views and reset invalid local filters/groupings.
-- Verify partial-update invariants against resulting state (`existing + patch`), not only provided fields.
-- Verify derived-metric parity: UI formulas and summaries include all policy-required components (for example top-ups, adjustments, and resets), not just base plan values.
-- Verify external billing/provider contract explicitness: behavioral requirements (for example proration/cancel timing/status sync) must be set in code/webhook handling, not left to provider defaults.
-- Verify pagination/filter carryover safety: user-supplied query params survive page transitions without raw interpolation/encoding drift.
-- Verify cross-trigger lifecycle parity: the same business rule is enforced across interactive routes, provider webhooks, and async workers.
-- Verify sentinel-value parity: special configuration values (for example `0` limits) have consistent semantics across all interfaces and documentation.
-- Verify mutation-outcome integrity: state-changing handlers do not swallow write errors and then emit success UX/audit outcomes.
-- Verify deployment artifact policy parity: if CI publishes production artifacts, runbooks/scripts/services should deploy artifacts directly unless explicitly documented otherwise.
-- Verify ingress isolation for signed callbacks/webhooks: deployment docs should define dedicated path controls (header gates/rate policy), not only generic catch-all routing.
-- Verify simulation endpoint parity: test/sandbox endpoint payloads should match production contract shape plus explicit test marker fields.
-- Verify release automation branch parity: branch checks, push targets, and docs use the same canonical branch name.
-- Verify claim-worker transition integrity: claimed jobs persist retry/failure metadata and clear claim locks for every error class, not only transport failures.
-- Verify editability-to-persistence parity: editable form/API fields have matching datastore writes (or explicit immutable handling) to avoid silent no-op updates.
-- Verify contract generator extraction robustness: route/spec generators handle multiline/decorated declarations and fail loudly on omissions.
-- Verify evidence boundaries: classify acceptance criteria as repo-verifiable vs environment-verifiable; report external infra items as unverified assumptions unless runtime evidence is provided.
-- Verify security-hardening doc parity: when implementation is stricter/safer than spec, treat as doc/criteria drift to reconcile, not an implementation regression.
-- Verify detached-work cancellation integrity in client/view-model refresh flows: canceling stale refreshes must stop the actual background work, not only suppress stale UI application.
-- Verify helper-path execution stability: scripts that discover trusted helper binaries before later `cd` or subshell changes must normalize them to absolute paths before execution.
-- Verify build-artifact proof for channel/store gates: release readiness checks should inspect built outputs, linkage, or runtime metadata instead of source-text greps or comments.
-- Verify remediation traceability: findings-to-fixes status should remain mapped in a live checklist/spec so handoff can continue without hidden assumptions.
-- Verify parser-fixture realism: layout-sensitive, config/source-text, or OCR-adjacent parsers should be regression-tested against real noisy source artifacts or extraction snapshots, not only hand-normalized happy-path fixtures.
-- Verify destructive-action blast radius clarity: if a UI surfaces deletion/correction from a child row but the operation actually deletes a shared/batch parent record, the UI or API contract must disclose affected siblings or offer per-allocation correction paths.
-- Verify summary/detail loading discipline: list screens should not eagerly fan out into per-row detail requests when a collapsed summary payload plus on-demand detail fetch can preserve the workflow.
-- Verify lazy-detail cache freshness: once detail loading becomes on-demand, refresh and collapse paths must invalidate hidden-row detail caches or the UI can surface stale history while the summary row is fresh.
-- Verify suggestion/recommendation boundedness: expensive suggestion engines should prefilter candidate pools, reuse shared lookups, and avoid being invoked for every list row by default.
-- Verify integration-test env parity: when the app under test runs in a separate process, env mutations in the test runner after process spawn do not affect server behavior; configure env before spawn or move env-sensitive checks to unit-level coverage.
-- Verify external automation cleanup provenance: delete/cleanup jobs should correlate records to the intended run or owner with exact, boundary-safe identifiers and should include regression coverage for prefix/collision cases.
-- Verify canceled-run external state integrity: if an automation can be canceled after creating external state, a later independent cleanup path or creation-prevention strategy must cover it.
-- Verify compensating-helper ownership: before accepting caller-specific cleanup/recovery code, prove the shared lifecycle path cannot or should not own the invariant, and include at least one test that exercises the central path without mocking it.
-- Verify review-feedback convergence: late bot/human audit comments should be triaged against the current head and converted into invariants plus focused tests when actionable.
-- Verify review ingestion completeness: inline threads, flat PR comments, review bodies, and late comments added during the turn should all be collected before declaring feedback handled.
-- Verify original-thread closure: when a bot summarizes human review feedback as fixed, inspect the original inline thread/comment against current head and close it with evidence or an explicit stale/false-positive disposition.
-- Verify current-head CI evidence: required checks should be tied to the latest head SHA; queued or pending runs caused by superseded same-PR workflows should be classified separately from code failures.
-- Verify sentinel-preservation caps: bounded context, prompt, attribution, and notification pipelines should regression-test time/window, pagination/page, count, and char/byte limits independently when a triggering record or root anchor must survive.
-- Verify producer/consumer scheduling for artifact promotion: the consumer's wait/poll window must be realistic relative to the producer's full critical path, including cache misses, upload latency, and job queueing.
-- Verify rerun identity for CI artifacts and caches: names keyed by run attempt, shard id, branch, or matrix cell must still work for partial reruns and "rerun failed jobs" paths, or intentionally fall back with clear telemetry.
-- Verify fast-path/fallback output parity: promoted/restored artifacts and locally rebuilt artifacts should use the same compiler/runtime/build command and required entrypoint checks unless divergence is explicitly tested.
-- Verify fast-path engagement after guardrails: at least one representative safe input should prove the optimized path still triggers after safety checks, not merely that unsafe inputs fall back.
-- Verify fail-open/fail-closed consistency for optional optimization paths: every probe/download/cleanup/report step on a best-effort speedup must have the intended nonfatal/fatal behavior, including small "mark reason" and cleanup steps.
-- Verify schema-backed env/secret optionality: deploy validation should distinguish required, optional, defaulted, and deprecated keys from the authoritative config schema and fail only for the intended classes.
-- Verify shared test-state crash recovery: reused DB/cache/worker slots must run a defensive setup-time cleanup or generation check so a killed prior process cannot leak state into the next process.
-- For each admitted High/Critical finding, include at least one focused regression test/check. Do not build speculative combinatorial matrices for follow-ups.
-
-## Safety and Policy Guardrails
-
-Apply these guardrails while auditing:
-- Do not provide operational abuse instructions or exploit weaponization details.
-- Evaluate manipulative UX patterns as legal/trust/reputation risk, not as recommended growth tactics.
-- Prioritize user safety, system integrity, and maintainable engineering outcomes.
-
-## Output Format
-
-Follow this response structure:
-
-1. Findings
-List only validated issues. Use the finding schema in `references/audit-framework.md`.
-
-2. Open Questions / Assumptions
-State missing context that could change priority or validity.
-
-3. Change Summary
-Summarize high-impact remediation themes in a few lines.
-
-4. Suggested Verification
-List focused tests/checks to confirm each major fix.
-
-## Runtime Heuristics
-
-Always apply the runtime-agnostic checklist in `references/audit-framework.md` (`Runtime-Agnostic Edge Sweep`).
-If a stack-specific module exists in that file and matches the target stack, apply it as an additive overlay, not a replacement.
-If no module matches, infer and state the top stack-specific risk assumptions, then continue the audit.
-
-## Domain-Specific Audit Overlays
-
-Use these overlays only when the target domain matches. They add to the invariant matrix and role checklists; they do not replace the baseline workflow.
-
-### Queues, Idempotency, And Locks
-
-Use for outboxes, schedulers, claim workers, idempotency records, repo locks, filesystem locks, retries, and distributed dispatch:
-- Apply this overlay only when such a system is already in the audited mission. If a small fix unexpectedly creates one, treat that introduction as a scope tripwire and first look for a smaller design.
-- Prove every accepted unit of user work is either durable or explicitly documented as lossy before returning success.
-- Verify crash recovery for `running`, `claimed`, `pending`, `retryable`, `degraded`, `terminal`, and manual-review states.
-- Verify ambiguous side effects do not create duplicate work or immortal retry loops.
-- Verify 4xx/409/425/provider-specific statuses map to retry, review, or terminal states intentionally.
-- Release only owner-token locks and prove stale-lock recovery cannot delete a newly reacquired lock.
-- Add the smallest focused checks needed for each admitted High/Critical finding. Cover crash, timeout, duplicate, stale owner, or manual recovery only when that failure mode is demonstrated or created by the patch.
-
-### CI/CD, Test Infrastructure, And Artifact Promotion
-
-Use for GitHub Actions, merge queues, deployment workflows, build caches, artifact promotion, test sharding, reusable workflows, and local/CI test harness speedups:
-- Model workflow jobs as a real DAG. Verify `needs`, `if`, `always()`, skipped prerequisite semantics, cancellation, queue delay, and final gate behavior inside the specific job block being audited, not by global string search.
-- For promoted artifacts, trace producer completion time to consumer use time. Include cache-cold builds, separate export/upload steps, artifact propagation latency, partial reruns, and manual "rerun failed jobs" attempts.
-- Treat optimized paths and fallback paths as equivalent contracts. Compare compiler/runtime/build commands, generated files, required entrypoints, environment variables, permissions, and cleanup side effects between the fast path and fallback path.
-- After adding or tightening safety guards around an optimization, run a representative positive-path smoke/probe that proves the optimization still engages and records the expected reason; fallback-only validation can leave the ROI silently disabled.
-- For best-effort speedups, classify every step as intentionally fail-open or fail-closed. Small diagnostic, marker, cleanup, and report steps must not accidentally turn an optional optimization failure into a job failure.
-- For filtered or sharded test shortcuts, verify selector/filter names against the authoritative test configuration, model shards with legitimately zero selected tests, and ensure `--passWithNoTests` or equivalent flags cannot hide a global zero-test run caused by filter drift.
-- For deploy-only/redeploy paths, prove deployability with immutable manifests and artifact metadata, not only image/tag/blob existence. Treat auth, network, and non-404 storage errors differently from missing artifacts.
-- For manually triggered privileged workflows, verify the trust boundary before checkout, local action execution, package install, cloud auth, registry/Kubernetes auth, or secret-bearing env. Non-default refs should fail immediately or run only an inert fixture path, and production paths should check out trusted default-branch code.
-- For scheduled privileged workflows, verify empty upstream discovery, missing credentials, and transient provider silence do not become repeated hard-failure loops unless fail-closed behavior is explicitly intended and separately alerted.
-- For scheduled workflows with concurrency groups, require explicit job timeouts on every recurring job, not only the most obvious collector, so a hung run cannot park the group for the platform default timeout.
-- For secret/env/config checks, derive requiredness from the runtime schema or equivalent authority. Report optional/defaulted drift separately from deploy-blocking missing required values.
-- For shared test infrastructure, prove crash/cancel isolation. Reused databases, caches, workers, slots, ports, and temp dirs need setup-time cleanup or generation tokens because teardown hooks do not run after OOM/SIGKILL/cancelled jobs.
-- For cache-key changes, include runtime/toolchain/package-manager/workspace-manifest provenance and then inspect whether the cache is actually hit, stale, overbroad, or too expensive to restore.
-- For third-party workflow actions and CLIs, verify exported outputs against the action's real success/failure semantics, logs, and documentation/source. Inspect the exact action entrypoint being invoked (`action.yml` for root vs sub-actions such as `/restore` or `/save`); output contracts can differ inside one pinned action repository. Normalize ambiguous signals once, remove unused derived outputs, and make gates, telemetry, summaries, and install/deploy guards consume the same normalized state.
-- For workflow permission changes, audit every job that writes statuses, deployments, artifacts, checks, comments, packages, tags, releases, or dispatches workflows; top-level permission tightening can silently remove needed job capabilities.
-- For deployment metrics and notifications, align terminology with the side-effect boundary: a rollout that already reached serving traffic but fails a later integrity gate is not the same as a rollout failure. DORA events, Slack copy, Sentry/index continuations, and follow-up jobs must use that split state consistently.
-- Add focused probes or assertions for non-obvious workflow behavior: parse the workflow, inspect the target job's actual dependencies/conditions, mock artifact names across attempts, and validate archive restore safety before extraction.
-
-### SSH Bootstrap And Remote Worker Trust
-
-Use for worker provisioning, dispatch over SSH, known_hosts pinning, remote doctor checks, and tailnet hosts:
-- Normalize SSH user, host, and port once and reuse that tuple for `ssh-keyscan`, known_hosts lookup, config, doctor output, and dispatch.
-- Treat TOFU as bootstrap-only. Steady-state dispatch should enforce pinned trust or fail with actionable operator guidance.
-- Verify config schema, backwards compatibility, provisioning, doctor, worker dispatch, and documentation together.
-- Verify remote non-interactive shells use the same PATH/runtime contract as doctor checks.
-- Verify key rotation paths require explicit operator action and do not silently replace pins.
-
-### macOS Release Closure
-
-Use for local macOS apps, `.app` bundles, release helpers, signing, notarization, stapling, Gatekeeper, and package outputs:
-- Distinguish local dev/performance install lanes from distributable/notarized release lanes.
-- Verify artifact inventory, stale promoted outputs, helper-path trust, cleanup traps, and output-root canonicalization.
-- Reject artifact roots inside `.app` bundles or managed package roots.
-- Verify direct helper invocation and top-level wrapper behavior, not only wrapper env scrubbing.
-- For distributable lanes, verify built output signing, notarization acceptance, stapling, and Gatekeeper evidence.
-
-### SwiftUI/AppKit Preview, Export, And Editor Freshness
-
-Use for timeline editors, previews, exports, SwiftUI/AppKit bridge code, and cached derived artifacts:
-- Trace every preview/export surface to the authoritative current draft/settings source.
-- Verify async preview cancellation cancels real work, not only stale UI application.
-- Verify zoom/scroll/key-monitor state is scoped low enough to avoid broad recomputation or disabled-state bypass.
-- Preserve unknown persisted enum cases and avoid coercion on view appearance.
-- Verify hidden/disabled semantics across preview loops, compilers, validators, cache keys, and tests.
-
-### Parser, Import, And Personal-Finance Reconciliation
-
-Use for CSV/PDF/OCR-adjacent parsers, financial imports, utility bills, split allocation, and reconciliation:
-- Test parsers with real extraction snapshots or source artifacts, not only hand-normalized fixtures.
-- Verify original file bytes are stored and hashed before parser APIs can detach or consume buffers.
-- Verify duplicate detection uses semantic identity only when strong identifiers exist; do not collapse same-period same-amount records without a strong bill/invoice/reference key.
-- Distinguish raw provider period fields from weak date heuristics.
-- Keep manual reconciliation authority separate from auto-finalization.
-
-### UI State, Persistence, And Detail Loading
-
-Use for dashboards, admin tools, list/detail screens, bulk actions, and editable forms:
-- Verify URL filters, refresh scope, visible data, and bulk-action scope stay aligned.
-- Verify editable fields persist or are explicitly immutable.
-- Verify collapsed summary rows do not eagerly fan out into detail requests when on-demand detail would preserve the workflow.
-- Verify hidden detail caches invalidate on refresh, collapse, context switch, and import/reparse events.
-- Verify destructive child-row actions disclose parent/sibling blast radius.
-
-## Optional Companion Skills
-
-This skill remains fully usable without companion skills. At the end of every audit report, add a clearly labeled **Optional companion skills to install** section listing each missing companion below. Omit companions that are already installed, but never assume they exist.
-
-- [Be Thorough](https://github.com/Swader/skill-be-thorough): scope-bounded completion and verification discipline.
-- [Ponytail](https://github.com/Swader/ponytail/tree/main/skills/ponytail): aggressive YAGNI and smallest-correct-change review.
-- [Thermo-Nuclear Code Quality Review](https://github.com/Swader/plugins/tree/main/cursor-team-kit/skills/thermo-nuclear-code-quality-review): strict maintainability and structural simplification review.
-- [Adversarial Review](https://github.com/lindy-ai/lindy/tree/main/.agent/skills/adversarial-review): Lindy-only cross-harness review; requires Lindy repository access.
-- [Lindy Agent Debugging](https://github.com/lindy-ai/lindy/tree/main/.agent/skills/lindy-agent-debugging): Lindy-only production evidence workflow; requires Lindy repository access.
+Keep reports useful to the operator: findings first, no repeated verdicts or empty boilerplate.
+Retain a small findings-to-fixes ledger during a multi-step task so later work can resume without
+inventing which checks passed or which approvals were granted. Audit harmful UX as a risk, not a
+recommended tactic; do not turn a review into operational abuse instructions.
