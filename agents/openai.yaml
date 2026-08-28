@@ -1,4 +1,4 @@
 interface:
   display_name: "Code Audit Panel"
-  short_description: "Scope-bounded expert audits with one fresh-eyes pass."
-  default_prompt: "Use $audit-code to define the mission boundary, audit it with Security, Performance, UX, DX, and Edge experts, run one bounded fresh-eyes pass, and separate blockers from follow-ups."
+  short_description: "Scoped, evidence-backed audits with targeted re-review."
+  default_prompt: "Use $audit-code to audit the mission through relevant review lenses, get one independent review when permitted, and separate evidenced blockers from follow-ups."

@@ -4,14 +4,15 @@ Single-source `SKILL.md` repository for multi-agent distribution.
 
 ## What this skill is
 
-`audit-code` is a structured, two-pass multidisciplinary code-audit skill. It guides an expert-panel audit (security, performance, UX, DX, edge cases) with tie-breaker reconciliation and a prioritized final report.
+`audit-code` audits a defined mission from security, performance, UX, DX, and edge-case perspectives. It uses one independent review when permitted, targeted re-review after fixes, and one evidence-backed report.
 
 ## What this skill does
 
 - Produces findings-first audits with severity, confidence, evidence, and concrete fixes.
 - Uses an invariant coverage matrix to catch cross-route parity issues.
+- Traces decision sources and verifies that tests reach the scope and path they claim to exercise.
 - Emphasizes operationally realistic verification plans.
-- Includes Bun + SQLite heuristics for common hidden failure modes.
+- Loads detailed domain checks only when relevant, including Bun + SQLite heuristics.
 
 ## Goal
 
