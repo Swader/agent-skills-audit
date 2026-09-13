@@ -1,6 +1,6 @@
 ---
 name: audit-code
-description: Audit code for concrete correctness, security, performance, UX, and maintainability risks within an agreed scope. Use for code audits, PR feedback, or adversarial review. Produce evidence-backed findings, focused verification, and a bounded independent review when permitted.
+description: For requested code audits or deep reviews, produce evidence-ranked findings across relevant risks.
 ---
 
 # Audit Code
@@ -11,7 +11,7 @@ entire audit. Prefer a few demonstrated findings over a long list of hypothetica
 
 ## Scope and authority
 
-Before reviewing, establish a compact mission contract:
+Before reviewing, establish a compact mission contract, or reuse the current one when it covers the same scope:
 
 - Demonstrated failure or requested outcome, acceptance criteria, and affected paths.
 - Explicit non-goals and whether the task permits edits or is review/plan only.
@@ -101,7 +101,9 @@ old test's proof claim. Distinguish source inspection, focused checks, and actua
    Use one independent reviewer when delegation is available and allowed; add specialists only for
    a concrete risk or explicit request. Provide the mission, non-goals, raw artifacts, and current
    diff without your desired answer or previous verdict. Ask it to challenge a consequential
-   assumption. If delegation is unavailable, perform and disclose a main-thread review instead.
+   assumption. Reuse current verification and independent review receipts when they cover this
+   exact change and scope; overlapping skills do not require duplicate review rounds. If delegation
+   is unavailable, perform and disclose a main-thread review instead.
 5. **Fix only authorized, admitted findings.** For report-only work, report them without editing.
    After a fix, rerun the affected check and one targeted review of the changed causal path. Broaden
    only when the fix changes the mission or exposes another concrete affected path. Do not restart
